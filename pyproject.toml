@@ -1,0 +1,20 @@
+[project]
+name = "UIDC2026_NGI_uv"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=6.30.1",
+    "ipython",
+    "matplotlib",
+    "numpy",
+    "openpyxl",
+    "pandas",
+    "pip>=25.2",
+    "pyarrow",
+    "scikit-learn",
+    "scipy",
+    "tqdm",
+]
+
+[tool.uv]
+dev-dependencies = []
