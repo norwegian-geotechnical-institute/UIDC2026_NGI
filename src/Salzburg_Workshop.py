@@ -2,7 +2,7 @@
 
 """
 
-@author: Dr. Georg Erharter, Theresa Maier
+@author: Dr. Georg Erharter
 """
 
 import numpy as np
@@ -10,27 +10,23 @@ import pandas as pd
 
 from X_library import utilities
 
+
+######################################
+# fixed values and variables
+######################################
+
+
+
+######################################
+# data import
+######################################
+
+# instantiations
 utils = utilities()
 
-utils.test()
-
-
-# ######################################
-# # fixed values and variables
-# ######################################
-
-# SAMPLE = 'TBM_A'  # 'TBM_A' 'TBM_B' 'TBM_C'
-
-# ######################################
-# # data import
-# ######################################
-
-# # instantiations
-# utils = utilities(SAMPLE)
-
-# # load the raw TBM dataset from a zip file
-# fname = utils.param_dict['filename']
-# df = pd.read_csv(f'../data/{fname}_1_synthetic_realistic.zip')
+# load the raw TBM dataset from a zip file
+fname = utils.param_dict['filename']
+df = pd.read_csv(f'../data/{fname}_1_synthetic_realistic.zip')
 
 # ######################################
 # # Basic data cleaning

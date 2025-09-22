@@ -207,7 +207,7 @@ class dictionaries:
     '转渣皮带机转速电位器设定值': 'muck_transfer_conveyor_speed_potentiometer_setting',
     'Unnamed: 198': 'unnamed_198'
     }
-        
+
         # dataset specific metadata dictionaries
         self.param_dict = {'filename': 'TBM_A',
                            'n cutters': 50,
