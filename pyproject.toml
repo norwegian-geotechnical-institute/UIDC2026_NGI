@@ -3,17 +3,22 @@ name = "UIDC2026_NGI_uv"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
+    "catboost>=1.2.8",
+    "imblearn>=0.0",
     "ipykernel>=6.30.1",
     "ipython",
+    "lightgbm>=4.6.0",
     "matplotlib",
     "numpy",
     "openpyxl",
     "pandas",
     "pip>=25.2",
     "pyarrow",
+    "pyod>=2.0.5",
     "scikit-learn",
     "scipy",
     "tqdm",
+    "xgboost>=3.0.5",
 ]
 
 [tool.uv]

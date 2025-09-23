@@ -1,1 +1,9 @@
 src/__pycache__/
+
+data/**/*
+
+.venv/
+
+analyses/
+
+catboost_info/
