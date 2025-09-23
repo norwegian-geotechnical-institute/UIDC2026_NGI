@@ -41,7 +41,7 @@ def discretize(dataframe: pd.DataFrame, interval: float, columns: list,
         if len(chunk) == 1:
             s = chunk.iloc[0].copy()
             n_dp = 1
-        elif len(ids) > 1:
+        elif len(chunk) > 1:
             s = chunk.mean(axis=0)
             s['collapse'] = round(s['collapse'], 0)
             n_dp = len(chunk)
@@ -79,23 +79,22 @@ def plot_param(ax, dataframe, parameter):
 DATA_FOLDER = r'C:\Users\GEr\OneDrive - NGI\Research\UIDC2026_NGI\YS-IWHR-main\The data analyzed in section 5&6'
 ANALYSES_FOLDER = r'C:\Users\GEr\OneDrive - NGI\Research\UIDC2026_NGI\analyses'
 COLLAPSE_EXCEL = r'C:\Users\GEr\OneDrive - NGI\Research\UIDC2026_NGI\data\collapses.xlsx'
+
+# TODO experiment with different features
 INPUT_FEATURES = [
-    'T(P,V/N)-b1', 'T(P,V/N)-b2', 'T(P,V/N)-a', 'T(P,V/N)-R2',
-                  'T(V/N)-b', 'T(V/N)-a', 'T(V/N)-R2', 'P(V)-slope', 'P(V)-a',
-                  'P(V)-R2', 'Wp(WT)-slope', 'Wp(WT)-a', 'Wp(WT)-R2',
-                   'T(P)-slope', 'T(P)-a', 'T(P)-R2', 'T-m', 'T-slope', 'T-R2',
-                   'P-m', 'P-slope', 'P-R2', 'V-m', 'V-slope', 'V-R2',
-                   'Vs-m', 'Vs-slope', 'TN-m', 'TN-slope', 'TN-R2', 'PV-m',
-                   'PV-slope', 'PV-R2', 'V/N-m', 'V/N-slope', 'V/N-R2',
-                   'N-m', 'Ns-m', 'I-m', 'V0-m', 'V/Vs-min', 'T/P-min',
-                   'T/P-max', 'T/P-m', 'T/P-std', 'Tpi-min', 'Tpi-max',
-                   'Tpi-m', 'Tpi-std', 'Fpi-min', 'Fpi-max', 'Fpi-m',
-                   'Fpi-std', 'Tpi-slope', 'Tpi-R2:1-sse/sst', 'WT/WP-slope',
-                   'WT/WP-R2:1-sse/sst', 'T(P*V/N)-slope', 'T(P*V/N)-a',
-                   'T(P*V/N)-R2', 'Fpi', 'P*V/N', 'T/P', 'Tpi', 'dt', 'dz',
-                   'workP', 'workT',
-                    'Total T', 'Total F', 'RPM', 'Pr', 'p'
-                    ]
+    'T(P,V/N)-b1', 'T(P,V/N)-b2', 'T(P,V/N)-a', 'T(P,V/N)-R2', 'T(V/N)-b',
+    'T(V/N)-a', 'T(V/N)-R2', 'P(V)-slope', 'P(V)-a', 'P(V)-R2', 'Wp(WT)-slope',
+    'Wp(WT)-a', 'Wp(WT)-R2', 'T(P)-slope', 'T(P)-a', 'T(P)-R2', 'T-m',
+    'T-slope', 'T-R2', 'P-m', 'P-slope', 'P-R2', 'V-m', 'V-slope', 'V-R2',
+    'Vs-m', 'Vs-slope', 'TN-m', 'TN-slope', 'TN-R2', 'PV-m', 'PV-slope',
+    'PV-R2', 'V/N-m', 'V/N-slope', 'V/N-R2', 'N-m', 'Ns-m', 'I-m', 'V0-m',
+    'V/Vs-min', 'T/P-min', 'T/P-max', 'T/P-m', 'T/P-std', 'Tpi-min', 'Tpi-max',
+    'Tpi-m', 'Tpi-std', 'Fpi-min', 'Fpi-max', 'Fpi-m', 'Fpi-std', 'Tpi-slope',
+    'Tpi-R2:1-sse/sst', 'WT/WP-slope', 'WT/WP-R2:1-sse/sst', 'T(P*V/N)-slope',
+    'T(P*V/N)-a', 'T(P*V/N)-R2', 'Fpi', 'P*V/N', 'T/P', 'Tpi', 'dt', 'dz',
+    'workP', 'workT',
+    'Total T', 'Total F', 'RPM', 'Pr', 'p'
+    ]
 
 
 ################################
@@ -131,6 +130,8 @@ for i in range(len(df_collapses)):
 df['Tunnellength [m]'] = df['Chainage'] - df['Chainage'].min()
 df['Tunnellength [m]'] = (df['Tunnellength [m]'] - df['Tunnellength [m]'].max()) * -1
 
+# TODO experiment with undersampling
+
 # discretize dataset
 # df_disc = discretize(df, 1, INPUT_FEATURES, chain_col='Tunnellength [m]')
 # df_disc = df_disc[df_disc['n dp'] > 0]
@@ -148,6 +149,9 @@ print(np.unique(y, return_counts=True))
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.33, random_state=42)
+
+# TODO experiment with different models
+# TODO hyperparameter tuning with OPTUNA
 
 clf = HistGradientBoostingClassifier()
 # clf = RandomForestClassifier()
@@ -197,6 +201,8 @@ parameters = ['penetration\n[mm/rev]', 'advance rate\n[mm/min]',
               'cutterhead rotations\n[rpm]', 'thrust\n[kN]',
               'cutterhead torque\n[kNm]', 'Field Penetration Index',
               'drilling efficiency index\nTPI']
+
+# TODO make 2 histograms on diagonal for 2 excavation types
 
 n_params = len(parameters)
 n_figure = 1
