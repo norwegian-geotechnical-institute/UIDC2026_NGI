@@ -191,6 +191,7 @@ df.sort_values(by='Chainage', ascending=False, inplace=True)
 
 df.index = np.arange(len(df))
 
+
 # assign collapse sections to data
 df_collapses = pd.read_excel(COLLAPSE_EXCEL)
 df['collapse'] = 0
@@ -202,6 +203,8 @@ for i in range(len(df_collapses)):
 # get tunnellength starting from 0 for conveniance
 df['Tunnellength [m]'] = df['Chainage'] - df['Chainage'].min()
 df['Tunnellength [m]'] = (df['Tunnellength [m]'] - df['Tunnellength [m]'].max()) * -1
+
+df.to_csv("data/raw/combined_data.csv", index=False)
 
 # TODO experiment with undersampling
 

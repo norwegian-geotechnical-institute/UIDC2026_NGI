@@ -12,7 +12,7 @@ from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import (
     ExtraTreesClassifier,
     RandomForestClassifier,
-    HistGradientBoostingClassifier
+    HistGradientBoostingClassifier,
 )
 from catboost import CatBoostClassifier
 from lightgbm import LGBMClassifier
@@ -20,8 +20,13 @@ from sklearn.svm import SVC as SVClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (accuracy_score, classification_report, f1_score,
-                             precision_score, recall_score)
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
