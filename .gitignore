@@ -7,3 +7,5 @@ data/**/*
 analyses/
 
 catboost_info/
+
+experiments/

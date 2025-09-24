@@ -1,0 +1,127 @@
+defaults: #points to sub-configs
+  - model: xgboost_native.yaml  # knn.yaml, xgboost_native.yaml
+  - _self_ # main overrides sub-cfg in case of duplicates
+
+# EXPERIMENT CONFIG
+#####################################################################
+
+# NOTE: hydra configs are not passed on to cfg and don't need schema
+hydra:
+  run:
+    dir: ./experiments/hydra_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ./experiments/hydra_outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+
+experiment:
+  save_model: False
+  seed: 42
+  train_fraction: 0.75
+  features: [
+        'T(P,V/N)-b1',
+        'T(P,V/N)-b2',
+        'T(P,V/N)-a',
+        'T(P,V/N)-R2',
+        'T(V/N)-b',
+        'T(V/N)-a',
+        'T(V/N)-R2',
+        'P(V)-slope',
+        'P(V)-a',
+        'P(V)-R2',
+        'Wp(WT)-slope',
+        'Wp(WT)-a',
+        'Wp(WT)-R2',
+        'T(P)-slope',
+        'T(P)-a',
+        'T(P)-R2',
+        'T-m',
+        'T-slope',
+        'T-R2',
+        'P-m',
+        'P-slope',
+        'P-R2',
+        'V-m',
+        'V-slope',
+        'V-R2',
+        'Vs-m',
+        'Vs-slope',
+        'TN-m',
+        'TN-slope',
+        'TN-R2',
+        'PV-m',
+        'PV-slope',
+        'PV-R2',
+        'V/N-m',
+        'V/N-slope',
+        'V/N-R2',
+        'N-m',
+        'Ns-m',
+        'I-m',
+        'V0-m',
+        'V/Vs-min',
+        'T/P-min',
+        'T/P-max',
+        'T/P-m',
+        'T/P-std',
+        'Tpi-min',
+        'Tpi-max',
+        'Tpi-m',
+        'Tpi-std',
+        'Fpi-min',
+        'Fpi-max',
+        'Fpi-m',
+        'Fpi-std',
+        'Tpi-slope',
+        'Tpi-R2:1-sse/sst',
+        'WT/WP-slope',
+        'WT/WP-R2:1-sse/sst',
+        'T(P*V/N)-slope',
+        'T(P*V/N)-a',
+        'T(P*V/N)-R2',
+        'Fpi',
+        'P*V/N',
+        'T/P',
+        'Tpi',
+        'dt',
+        'dz',
+        'workP',
+        'workT',
+        'Total T',
+        'Total F',
+        'RPM',
+        'Pr',
+        'p'
+        ]
+  site_info: []
+  label: 'collapse'
+  undersample_level: 2000
+  oversample_level: 500
+  tbm_classification:
+    0: regular
+    1: collapse
+
+preprocess:
+  outlier_feature: ''
+  remove_duplicates: True
+  remove_outliers_hard: False
+  remove_outliers_uni: False
+  remove_outliers_multi: True
+  univariate_threshold: 3
+  multivariate_threshold: 0.5
+
+
+dataset:
+  path_raw: ./data/raw/
+  path_intermediate: ./data/intermediate
+  path_model_ready: ./data/model_ready
+  path_raw_dataset: ${dataset.path_raw}/combined_data.csv
+  path_model_ready_train: ${dataset.path_model_ready}/dataset_train.csv
+  path_model_ready_test: ${dataset.path_model_ready}/dataset_test.csv
+
+mlflow:
+  path: ./experiments/mlruns
+  experiment_name: null # is set when calling scripts
+
+optuna:
+  n_trials: 1000
+  path_results: experiments/hyperparameters

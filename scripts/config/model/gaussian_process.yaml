@@ -1,0 +1,10 @@
+name: gaussian_process
+params:
+  kernel: null
+  optimizer: fmin_l_bfgs_b
+  n_restarts_optimizer: 0
+  max_iter_predict: 100
+  warm_start: false
+  copy_X_train: true
+  multi_class: one_vs_rest
+  n_jobs: null

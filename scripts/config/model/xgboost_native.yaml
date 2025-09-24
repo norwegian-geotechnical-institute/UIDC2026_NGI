@@ -2,7 +2,7 @@ name: xgboost_native
 params:
   device: gpu
   random_state: 42
-  objective: multi:softmax
+  objective: binary:logistic
   alpha: 2.4133070608865714
   colsample_bytree: 0.5609787475488388
   gamma: 0.27781388968466764
