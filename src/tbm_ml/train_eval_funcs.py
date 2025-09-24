@@ -87,18 +87,18 @@ def xgb_native_pipeline(
         X_train_resampled, y_train_resampled
     )
 
-    # Adjust labels to start from 0 (required for XGBoost with multiclass)
-    y_train = y_train_final - 1
-    y_test = y_test - 1
+    # For binary classification, ensure labels are 0 and 1
+    # No need to adjust labels if they're already 0 and 1
+    y_train = y_train_final
+    y_test = y_test
 
     # Convert the balanced training data to DMatrix (with GPU support)
     dtrain = xgb.DMatrix(X_train_final, label=y_train)
     dtest = xgb.DMatrix(X_test, label=y_test)
 
     # Set default parameters for XGBoost if not provided
-    params = {
-        "num_class": len(y_train.unique()),  # Number of classes
-    }
+    # Note: num_class is not needed for binary classification
+    params = {}
     model_params.update(params)
 
     # Train the XGBoost model
@@ -109,9 +109,10 @@ def xgb_native_pipeline(
         xgb_model.save_model(model_save_path)
         pprint(f"Model saved at {model_save_path}")
 
-    # Make predictions (output is directly class labels)
-    y_pred = xgb_model.predict(dtest)
-    y_pred = y_pred + 1
+    # Make predictions (output is probabilities for binary:logistic)
+    y_pred_proba = xgb_model.predict(dtest)
+    # Convert probabilities to class labels (0 or 1)
+    y_pred = (y_pred_proba > 0.5).astype(int)
     return y_pred
 
 

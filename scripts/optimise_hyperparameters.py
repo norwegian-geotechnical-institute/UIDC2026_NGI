@@ -5,9 +5,10 @@ import hydra
 import yaml
 from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
+from sklearn.model_selection import train_test_split
 
 from tbm_ml.hyperparameter_optimisation import run_optimisation
-from tbm_ml.preprocess_funcs import get_dataset, split_drillhole_data
+from tbm_ml.preprocess_funcs import get_dataset
 from tbm_ml.schema_config import Config
 
 
@@ -21,13 +22,13 @@ def main(cfg: DictConfig) -> None:
     # Load data - only use the training data for hyperparameter optimisation
     console.print("[bold green]Loading training and testing data...[/bold green]")
     df = get_dataset(pcfg.dataset.path_model_ready_train)
-    train_df, test_df = split_drillhole_data(
-        df, id_column="ID", train_fraction=pcfg.experiment.train_fraction
-    )
-    X_train = train_df[pcfg.experiment.features]
-    X_test = test_df[pcfg.experiment.features]
-    y_train = train_df[pcfg.experiment.label]
-    y_test = test_df[pcfg.experiment.label]
+
+    X = df[pcfg.experiment.features]
+    y = df[pcfg.experiment.label]
+    X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                        test_size=(1 - pcfg.experiment.train_fraction),
+                                                        random_state=pcfg.experiment.seed,
+                                                        stratify=y)
 
     # optimally run using cross validation
     study = run_optimisation(

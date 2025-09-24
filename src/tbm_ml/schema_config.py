@@ -25,7 +25,7 @@ class ExperimentConfig(BaseModel):
     label: str = Field(..., description="Label for the dataset")
     undersample_level: int = Field(..., description="Level for undersampling")
     oversample_level: int = Field(..., description="Level for oversampling")
-    soil_classification: dict[int, str] = Field(
+    tbm_classification: dict[int, str] = Field(
         ..., description="Soil classification dictionary"
     )
 

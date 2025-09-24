@@ -4,7 +4,6 @@ import pandas as pd
 from pyod.models.iforest import IForest
 from pyod.models.mad import MAD
 from rich.pretty import pprint
-from sklearn.model_selection import train_test_split
 
 from tbm_ml.utility import track_sample_num
 

@@ -4,7 +4,7 @@ from typing import Any
 import optuna
 import pandas as pd
 from rich.console import Console
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import accuracy_score
 
 from tbm_ml.train_eval_funcs import xgb_native_pipeline
 
@@ -23,7 +23,7 @@ def objective(
 
     # Defining the hyperparameters to be optimised
     model_params = {
-        "objective": "multi:softmax",
+        "objective": "binary:logistic",
         "device": "gpu",
         "random_state": 42,
         "max_depth": trial.suggest_int("max_depth", 3, 10),
@@ -52,11 +52,11 @@ def objective(
     )
 
     # Evaluate the performance using balanced accuracy (or you can use any other metric)
-    balanced_accuracy = balanced_accuracy_score(y_test, y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
 
-    console.print(f"Balanced accuracy: {balanced_accuracy}")
+    console.print(f"Accuracy: {accuracy}")
 
-    return balanced_accuracy
+    return accuracy
 
 
 # Run Optuna optimisation
