@@ -22,6 +22,7 @@ from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     classification_report,
     f1_score,
     precision_score,
@@ -31,7 +32,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
-from tbm_ml.plotting import plot_confusion_matrix
+from tbm_ml.plotting import plot_confusion_matrix, plot_tbm_confusion_matrix
 
 
 def load_data(
@@ -207,6 +208,7 @@ def evaluate_model(
 
     # Calculate metrics
     accuracy = accuracy_score(y_test, y_pred)
+    balanced_accuracy = balanced_accuracy_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
@@ -214,13 +216,16 @@ def evaluate_model(
     # Store metrics in dictionary
     metrics = {
         "accuracy": accuracy,
+        "balanced_accuracy": balanced_accuracy,
         "recall": recall,
         "precision": precision,
         "f1": f1,
     }
 
-    # Plot confusion matrix
-    cm_fig = plot_confusion_matrix(y_test, y_pred, class_mapping)
+    # Plot confusion matrix using TBM-specific styling
+    cm_fig = plot_tbm_confusion_matrix(
+        y_test, y_pred, class_mapping, normalize="true", show_percentages=True
+    )
     artifacts = {"confusion_matrix": cm_fig}
 
     # Print classification report

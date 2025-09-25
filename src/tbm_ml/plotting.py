@@ -4,12 +4,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
-def pairplot(data,
-             parameters: list[str],
-             target: str | None = None,
-             bins: int = 30,
-             axis_fontsize: int = 8,
-             **kwargs):
+
+def pairplot(
+    df,
+    parameters: list[str],
+    target: str | None = "collapse",
+    bins: int = 30,
+    axis_fontsize: int = 8,
+    **kwargs,
+):
     """
     Create a pair plot to visualize relationships between variables in a dataset.
 
@@ -20,38 +23,53 @@ def pairplot(data,
     Returns:
     None
     """
-    df = data.copy()
-
-    df_params = df[parameters]
-    df_target = df[target] if target else None
-
-    if target:
-        df_collaps = df[df[target] == 1]
-        df_regular = df[df[target] != 1]
-
     n_params = len(parameters)
 
-    fig = plt.figure(figsize=kwargs["figsize"] if "figsize" in kwargs else (10, 10))
+    fig, axs = plt.subplots(nrows=n_params, ncols=n_params, figsize=(18, 18))
 
-    n_figure = 1
+    df_collaps = df[df[target] == 1]
+    df_regular = df[df[target] != 1]
 
     for i in range(n_params):
         for j in range(n_params):
-            ax = fig.add_subplot(n_params, n_params, n_figure)
+            ax: plt.Axes = axs[i, j]
             if i == j:
-                n, xbins, _ = ax.hist(df_params.iloc[:, i], color='grey', bins=bins, edgecolor='black')
-
-                if target:
-                    n_target, _, _ = ax.hist(df_collaps.iloc[:, i], bins=xbins, color='red', alpha=0.7, edgecolor='black', zorder=2)
-
+                _, xbins, _ = ax.hist(
+                    df[parameters[i]],
+                    color="grey",
+                    bins=30,
+                    edgecolor="black",
+                    alpha=0.5,
+                    density=True,
+                )
+                ax.hist(
+                    df_collaps[parameters[i]],
+                    bins=xbins,
+                    color="red",
+                    alpha=0.5,
+                    edgecolor="black",
+                    zorder=2,
+                    density=True,
+                )
             else:
-                ax.scatter(df_params.iloc[:, i], df_params.iloc[:, j], c=kwargs.get('c', 'grey'), alpha=0.5, s=2)
-                ax.set_ylabel(parameters[j].replace(' [', '\n['),
-                            fontsize=axis_fontsize)
-            ax.set_xlabel(parameters[i].replace(' [', '\n['),
-                            fontsize=axis_fontsize)
-            ax.tick_params(axis='both', labelsize=axis_fontsize)
-            n_figure += 1
+                ax.scatter(
+                    df_regular[parameters[j]],
+                    df_regular[parameters[i]],
+                    color="grey",
+                    edgecolor="black",
+                    alpha=0.3,
+                    s=1,
+                )
+                ax.scatter(
+                    df_collaps[parameters[j]],
+                    df_collaps[parameters[i]],
+                    color="red",
+                    alpha=1,
+                    s=2,
+                )
+                ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=8)
+            ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=8)
+            ax.tick_params(axis="both", labelsize=8)
 
     return fig
 
@@ -137,4 +155,142 @@ def plot_confusion_matrix(
 
     plt.title("Confusion Matrix (recall for each class on the diagonal)")
     plt.tight_layout()
+
+    return fig
+
+
+def _plot_param(ax, dataframe, parameter):
+    ax.plot(dataframe["Tunnellength [m]"], dataframe[parameter], color="black")
+    ax.set_ylabel(parameter)
+    ax.set_xlim(
+        left=dataframe["Tunnellength [m]"].min(),
+        right=dataframe["Tunnellength [m]"].max(),
+    )
+    # ax.legend()
+    ax.grid(alpha=0.5)
+
+
+def plot_tbm_parameters(df):
+    """ """
+    fig, axs = plt.subplots(ncols=1, nrows=8, figsize=(18, 10), sharex=True)
+
+    _plot_param(axs[0], df, "penetration\n[mm/rev]")
+    _plot_param(axs[1], df, "advance rate\n[mm/min]")
+    _plot_param(axs[2], df, "cutterhead rotations\n[rpm]")
+    _plot_param(axs[3], df, "thrust\n[kN]")
+    _plot_param(axs[4], df, "cutterhead torque\n[kNm]")
+    _plot_param(axs[5], df, "Field Penetration Index")
+    _plot_param(axs[6], df, "drilling efficiency index\nTPI")
+    _plot_param(axs[7], df, "collapse")
+    axs[7].set_xlabel("Tunnellength [m]")
+
+    return fig
+
+
+def plot_tbm_confusion_matrix(
+    y_true: np.ndarray | list,
+    y_pred: np.ndarray | list,
+    class_mapping: dict[int, str],
+    model_name: str = "",
+    figsize: tuple = (5, 5),
+    normalize: str = "true",
+    show_percentages: bool = True,
+    cmap: str = "Greys",
+    dpi: int = 300,
+) -> plt.Figure:
+    """
+    Create a confusion matrix plot matching the style from A_main.py and preliminary_tests.py.
+
+    This function creates a confusion matrix with percentage annotations and custom styling
+    that matches the original implementation used in the TBM collapse prediction analysis.
+
+    Parameters:
+    -----------
+    y_true : array-like
+        True labels
+    y_pred : array-like
+        Predicted labels
+    class_mapping : dict[int, str]
+        Mapping of class numbers to class names.
+        Example: {0: "regular", 1: "collapse"}
+    model_name : str, optional
+        Name of the model for the title. Default is ""
+    figsize : tuple, optional
+        Figure size. Default is (5, 5)
+    normalize : str, optional
+        Normalization option for confusion matrix ('true', 'pred', 'all', or None).
+        Default is 'true' (normalize by true labels)
+    show_percentages : bool, optional
+        Whether to show percentage annotations in cells. Default is True
+    cmap : str, optional
+        Colormap name. Default is 'Greys'
+    dpi : int, optional
+        DPI for saved figures. Default is 300
+
+    Returns:
+    --------
+    plt.Figure
+        The matplotlib figure object
+
+    Example:
+    --------
+    >>> class_mapping = {0: "regular\nexcavation", 1: "collapse"}
+    >>> fig = plot_tbm_confusion_matrix(y_test, y_pred, class_mapping, "RandomForest")
+    """
+
+    # Calculate confusion matrix
+    cm = confusion_matrix(y_true, y_pred, normalize=normalize)
+
+    # Convert to percentages if normalized
+    if normalize is not None:
+        cm_display = np.round(cm * 100, 1)  # Round to 1 decimal place for percentages
+    else:
+        cm_display = cm.astype(int)
+
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Display confusion matrix as image
+    im = ax.imshow(cm_display, interpolation="nearest", cmap=getattr(plt.cm, cmap))
+
+    # Add colorbar
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # Get class labels from mapping
+    class_labels = [class_mapping.get(i, str(i)) for i in sorted(class_mapping.keys())]
+
+    # Set labels and title
+    ax.set(
+        xticks=np.arange(len(class_labels)),
+        yticks=np.arange(len(class_labels)),
+        xticklabels=class_labels,
+        yticklabels=class_labels,
+        ylabel="True label",
+        xlabel="Predicted label",
+        title=f'Confusion Matrix{f" ({model_name})" if model_name else ""}',
+    )
+
+    # Rotate x-axis labels
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    # Add percentage annotations in cells
+    if show_percentages:
+        for i in range(cm_display.shape[0]):
+            for j in range(cm_display.shape[1]):
+                value = cm_display[i, j]
+
+                # Choose text color based on cell value (white for dark cells, black for light cells)
+                text_color = "white" if value > (cm_display.max() / 2) else "black"
+
+                # Format text based on whether values are percentages or counts
+                if normalize is not None:
+                    text = f"({value:.1f}%)"
+                else:
+                    text = f"{int(value)}"
+
+                ax.text(j, i, text, ha="center", va="center", color=text_color)
+
+    # Adjust layout to prevent clipping
+    plt.tight_layout()
+
     return fig

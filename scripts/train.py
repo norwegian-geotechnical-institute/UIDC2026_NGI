@@ -62,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     # Evaluate model
     console.print("[bold green]Evaluating model...[/bold green]")
     metrics, artifacts = evaluate_model(
-        y_test, y_pred, pcfg.experiment.soil_classification
+        y_test, y_pred, pcfg.experiment.tbm_classification
     )
 
     # log results and config to mlflow

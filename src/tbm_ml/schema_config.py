@@ -40,6 +40,7 @@ class MLflowConfig(BaseModel):
 
 class OptunaConfig(BaseModel):
     n_trials: int = Field(..., description="Number of trials for Optuna optimization")
+    cv_folds: int = Field(5, description="Number of folds for cross-validation")
     path_results: str = Field(
         ..., description="Path to save the results of experiments"
     )
