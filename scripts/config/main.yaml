@@ -1,5 +1,5 @@
 defaults: #points to sub-configs
-  - model: xgboost_native.yaml  # knn.yaml, xgboost_native.yaml
+  - model: knn.yaml  # knn.yaml, xgboost_native.yaml
   - _self_ # main overrides sub-cfg in case of duplicates
 
 # EXPERIMENT CONFIG
@@ -123,5 +123,5 @@ mlflow:
   experiment_name: null # is set when calling scripts
 
 optuna:
-  n_trials: 1000
+  n_trials: 100
   path_results: experiments/hyperparameters
