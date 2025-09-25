@@ -1,11 +1,10 @@
+# Python specific
 **/__pycache__/
-
-data/**/*
-
 .venv/
 
+# Project specific
+data/
 analyses/
-
 catboost_info/
-
 experiments/
+plots/
