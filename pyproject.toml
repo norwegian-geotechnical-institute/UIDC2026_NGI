@@ -8,6 +8,7 @@ dependencies = [
     "imblearn>=0.0",
     "ipykernel>=6.30.1",
     "ipython",
+    "joblib>=1.4.0",
     "lightgbm>=4.6.0",
     "matplotlib",
     "mlflow>=3.4.0",
@@ -25,12 +26,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "ipdb>=0.13.13",
-    "isort>=6.0.1",
-    "mypy>=1.18.1",
-    "ruff>=0.13.0",
-]
+dev = ["ipdb>=0.13.13", "isort>=6.0.1", "mypy>=1.18.1", "ruff>=0.13.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tbm_ml"]
