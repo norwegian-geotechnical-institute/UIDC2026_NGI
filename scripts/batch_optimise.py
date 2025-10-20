@@ -27,7 +27,7 @@ from tbm_ml.schema_config import Config
 
 # List of all models to optimise
 MODELS = [
-    "xgboost_native",
+    # "xgboost_native",
     "xgboost",
     "random_forest",
     "extra_trees",
@@ -37,7 +37,7 @@ MODELS = [
     "logistic_regression",
     "svm",
     "knn",
-    "gaussian_process",
+    # "gaussian_process",
 ]
 
 

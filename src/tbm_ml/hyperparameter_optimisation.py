@@ -7,88 +7,128 @@ import numpy as np
 import optuna
 import pandas as pd
 from rich.console import Console
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import StratifiedKFold
 
 from tbm_ml.train_eval_funcs import xgb_native_pipeline, train_predict
 
 
 def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, Any]:
-    """Define hyperparameter search spaces for different models."""
+    """Define hyperparameter search spaces for different models.
+
+    Optimized for binary classification with limited data (~3000 samples).
+    Focus on regularization and overfitting prevention.
+    """
 
     if model_name == "xgboost_native":
         return {
             "objective": "binary:logistic",
-            "device": "gpu",
+            "device": "cpu",  # More stable for small datasets
             "random_state": 42,
-            "max_depth": trial.suggest_int("max_depth", 3, 10),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "gamma": trial.suggest_float("gamma", 1e-8, 1.0, log=True),
-            "min_child_weight": trial.suggest_float(
-                "min_child_weight", 1e-3, 10.0, log=True
-            ),
-            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "lambda": trial.suggest_float("lambda", 1e-3, 10.0, log=True),
-            "alpha": trial.suggest_float("alpha", 1e-3, 10.0, log=True),
+            # CRITICAL: Tree structure (most important)
+            "max_depth": trial.suggest_int("max_depth", 3, 8),  # Reduced max depth
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            # CRITICAL: Regularization (prevent overfitting)
+            "lambda": trial.suggest_float("lambda", 0.1, 10.0, log=True),  # L2 reg
+            "alpha": trial.suggest_float("alpha", 1e-3, 1.0, log=True),  # L1 reg
+            # HIGH: Sample control
+            "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 10.0),
+            "subsample": trial.suggest_float("subsample", 0.7, 1.0),  # Less aggressive
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+            # MEDIUM: Tree complexity
+            "gamma": trial.suggest_float("gamma", 0.0, 0.5),  # Reduced range
         }
 
     elif model_name == "xgboost":
         return {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 500),
-            "max_depth": trial.suggest_int("max_depth", 3, 10),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
+            # CRITICAL: Tree control
+            "max_depth": trial.suggest_int("max_depth", 3, 8),  # Reduced for small data
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300),  # Reduced range
+            # CRITICAL: Regularization
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 1.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 10.0, log=True),
+            # HIGH: Sampling
+            "subsample": trial.suggest_float("subsample", 0.7, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
             "random_state": 42,
         }
 
     elif model_name == "random_forest":
         return {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-            "max_depth": trial.suggest_int("max_depth", 5, 30),
-            "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+            # CRITICAL: Tree control
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),  # Reduced range
+            "max_depth": trial.suggest_int("max_depth", 5, 20),  # Reduced max depth
+            # CRITICAL: Overfitting control
+            "min_samples_split": trial.suggest_int(
+                "min_samples_split", 5, 20
+            ),  # Increased min
+            "min_samples_leaf": trial.suggest_int(
+                "min_samples_leaf", 2, 10
+            ),  # Increased min
+            # HIGH: Feature randomness
             "max_features": trial.suggest_categorical(
-                "max_features", ["sqrt", "log2", None]
-            ),
-            "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
+                "max_features", ["sqrt", "log2"]
+            ),  # Removed None
+            # LOW: Bootstrap (less critical with small data)
+            "bootstrap": True,  # Fixed to True for stability
             "random_state": 42,
         }
 
     elif model_name == "extra_trees":
         return {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-            "max_depth": trial.suggest_int("max_depth", 5, 30),
-            "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
-            "max_features": trial.suggest_categorical(
-                "max_features", ["sqrt", "log2", None]
-            ),
+            # CRITICAL: Tree control (similar to random forest but can be slightly deeper)
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "max_depth": trial.suggest_int("max_depth", 5, 25),
+            # CRITICAL: Overfitting control
+            "min_samples_split": trial.suggest_int("min_samples_split", 5, 20),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 2, 10),
+            # HIGH: Feature randomness
+            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+            # MEDIUM: Bootstrap (Extra Trees can handle without bootstrap better)
             "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
             "random_state": 42,
         }
 
     elif model_name == "hist_gradient_boosting":
         return {
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "max_iter": trial.suggest_int("max_iter", 50, 300),
-            "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 15, 100),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 50),
-            "l2_regularization": trial.suggest_float("l2_regularization", 0.0, 1.0),
-            "max_bins": trial.suggest_categorical("max_bins", [128, 255]),
+            # CRITICAL: Learning control
+            "learning_rate": trial.suggest_float(
+                "learning_rate", 0.01, 0.2, log=True
+            ),  # Reduced max
+            "max_iter": trial.suggest_int(
+                "max_iter", 50, 200
+            ),  # Reduced for small data
+            # CRITICAL: Tree structure
+            "max_leaf_nodes": trial.suggest_int(
+                "max_leaf_nodes", 15, 50
+            ),  # Reduced max
+            "min_samples_leaf": trial.suggest_int(
+                "min_samples_leaf", 20, 50
+            ),  # Increased min
+            # HIGH: Regularization
+            "l2_regularization": trial.suggest_float("l2_regularization", 0.01, 1.0),
+            # LOW: Binning (less critical for small data)
+            "max_bins": 128,  # Fixed for consistency
             "random_state": 42,
         }
 
     elif model_name == "catboost":
         return {
-            "iterations": trial.suggest_int("iterations", 100, 1000),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "depth": trial.suggest_int("depth", 3, 10),
-            "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
-            "border_count": trial.suggest_categorical("border_count", [128, 254]),
+            # CRITICAL: Learning control
+            "iterations": trial.suggest_int("iterations", 100, 500),  # Reduced max
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "depth": trial.suggest_int("depth", 3, 8),  # Reduced max depth
+            # CRITICAL: Regularization
+            "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 20),  # Increased min
+            # MEDIUM: Other parameters
+            "border_count": 128,  # Fixed for small datasets
             "random_seed": 42,
             "verbose": False,
             "task_type": "CPU",
@@ -99,71 +139,76 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             "objective": "binary",
             "metric": "binary_logloss",
             "boosting_type": "gbdt",
-            "num_leaves": trial.suggest_int("num_leaves", 10, 100),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
-            "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
-            "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-            "min_child_samples": trial.suggest_int("min_child_samples", 5, 50),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
-            "n_estimators": trial.suggest_int("n_estimators", 50, 500),
+            # CRITICAL: Tree structure
+            "num_leaves": trial.suggest_int("num_leaves", 10, 50),  # Reduced max
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300),  # Reduced range
+            # CRITICAL: Regularization
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 1.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 10.0, log=True),
+            "min_child_samples": trial.suggest_int(
+                "min_child_samples", 10, 50
+            ),  # Increased min
+            # HIGH: Feature control
+            "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
+            "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
+            "bagging_freq": trial.suggest_int("bagging_freq", 1, 5),  # Reduced max
             "random_state": 42,
             "verbose": -1,
         }
 
     elif model_name == "svm":
         return {
-            "C": trial.suggest_float("C", 1e-3, 100, log=True),
+            # CRITICAL: Regularization vs complexity trade-off
+            "C": trial.suggest_float(
+                "C", 0.01, 10, log=True
+            ),  # Reduced range for stability
+            # CRITICAL: Kernel choice
             "kernel": trial.suggest_categorical(
-                "kernel", ["rbf", "linear", "poly", "sigmoid"]
-            ),
-            "gamma": (
-                trial.suggest_categorical("gamma", ["scale", "auto"])
-                if trial.params.get("kernel") == "rbf"
-                else "scale"
-            ),
-            "degree": (
-                trial.suggest_int("degree", 2, 5)
-                if trial.params.get("kernel") == "poly"
-                else 3
-            ),
+                "kernel", ["rbf", "linear"]
+            ),  # Simplified
+            # HIGH: RBF kernel parameter (only if RBF selected)
+            "gamma": trial.suggest_categorical("gamma", ["scale", "auto"]),
             "random_state": 42,
         }
 
     elif model_name == "logistic_regression":
         return {
-            "penalty": trial.suggest_categorical(
-                "penalty", ["l1", "l2", "elasticnet", None]
-            ),
-            "C": trial.suggest_float("C", 1e-3, 100, log=True),
-            "solver": trial.suggest_categorical(
-                "solver", ["liblinear", "lbfgs", "saga"]
-            ),
-            "max_iter": trial.suggest_int("max_iter", 100, 1000),
+            # CRITICAL: Regularization strength
+            "C": trial.suggest_float("C", 0.01, 10, log=True),  # Focused range
+            # HIGH: Regularization type
+            "penalty": trial.suggest_categorical("penalty", ["l1", "l2"]),  # Simplified
+            # MEDIUM: Solver (depends on penalty)
+            "solver": "liblinear",  # Fixed for stability with small data
+            "max_iter": 1000,  # Fixed sufficient value
             "random_state": 42,
         }
 
     elif model_name == "knn":
         return {
-            "n_neighbors": trial.suggest_int("n_neighbors", 3, 50),
+            # CRITICAL: Number of neighbors (most important for KNN)
+            "n_neighbors": trial.suggest_int(
+                "n_neighbors", 3, 25
+            ),  # Reduced max for small data
+            # HIGH: Distance weighting
             "weights": trial.suggest_categorical("weights", ["uniform", "distance"]),
-            "algorithm": trial.suggest_categorical(
-                "algorithm", ["auto", "ball_tree", "kd_tree", "brute"]
-            ),
-            "leaf_size": trial.suggest_int("leaf_size", 10, 100),
-            "p": trial.suggest_int("p", 1, 3),
+            # MEDIUM: Distance metric
+            "p": trial.suggest_int("p", 1, 2),  # Manhattan or Euclidean
+            # LOW: Algorithm choice (auto is usually best)
+            "algorithm": "auto",  # Fixed for simplicity
+            "leaf_size": 30,  # Fixed default value
         }
 
     elif model_name == "gaussian_process":
+        # SIMPLIFIED: GP is computationally expensive and complex for hyperopt with small data
+        # Fix most parameters to reasonable defaults and tune only the most critical ones
         return {
-            "optimizer": trial.suggest_categorical("optimizer", ["fmin_l_bfgs_b"]),
-            "n_restarts_optimizer": trial.suggest_int("n_restarts_optimizer", 0, 5),
-            "max_iter_predict": trial.suggest_int("max_iter_predict", 50, 200),
-            "kernel": trial.suggest_categorical(
-                "kernel", ["linear", "rbf", "polynomial"]
-            ),
-            "length_scale": trial.suggest_float("length_scale", 1e-2, 1e2, log=True),
+            # MEDIUM: Optimizer (fixed to most robust option)
+            "optimizer": "fmin_l_bfgs_b",
+            "n_restarts_optimizer": 2,  # Fixed reasonable value
+            "max_iter_predict": 100,  # Fixed reasonable value
+            # LOW: Kernel choice (simplified, RBF is usually good)
+            "kernel": None,  # Use default RBF kernel
             "random_state": 42,
         }
 
@@ -193,7 +238,13 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
         try:
             # Use stratified k-fold cross-validation
             skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-            cv_scores = []
+            cv_metrics = {
+                "balanced_accuracy": [],
+                "accuracy": [],
+                "precision": [],
+                "recall": [],
+                "f1": [],
+            }
 
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
                 X_train_fold = X.iloc[train_idx]
@@ -224,19 +275,45 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
                         oversample_level,
                     )
 
-                # Calculate balanced accuracy for this fold
-                fold_score = balanced_accuracy_score(y_val_fold, y_pred_fold)
-                cv_scores.append(fold_score)
+                # Calculate all metrics for this fold
+                cv_metrics["balanced_accuracy"].append(
+                    balanced_accuracy_score(y_val_fold, y_pred_fold)
+                )
+                cv_metrics["accuracy"].append(accuracy_score(y_val_fold, y_pred_fold))
+                cv_metrics["precision"].append(
+                    precision_score(y_val_fold, y_pred_fold, zero_division=0)
+                )
+                cv_metrics["recall"].append(
+                    recall_score(y_val_fold, y_pred_fold, zero_division=0)
+                )
+                cv_metrics["f1"].append(
+                    f1_score(y_val_fold, y_pred_fold, zero_division=0)
+                )
 
-            # Return mean cross-validation score
-            mean_cv_score = np.mean(cv_scores)
-            std_cv_score = np.std(cv_scores)
+            # Calculate mean scores for all metrics
+            mean_metrics = {
+                metric: np.mean(scores) for metric, scores in cv_metrics.items()
+            }
+            std_metrics = {
+                metric: np.std(scores) for metric, scores in cv_metrics.items()
+            }
+
+            # Store metrics in trial for later MLflow logging
+            for metric, mean_score in mean_metrics.items():
+                trial.set_user_attr(f"cv_mean_{metric}", mean_score)
+                trial.set_user_attr(f"cv_std_{metric}", std_metrics[metric])
 
             console.print(
-                f"CV Balanced accuracy: {mean_cv_score:.4f} (+/- {std_cv_score:.4f})"
+                f"CV Metrics - Balanced Accuracy: {mean_metrics['balanced_accuracy']:.4f} "
+                f"(+/- {std_metrics['balanced_accuracy']:.4f}), "
+                f"Accuracy: {mean_metrics['accuracy']:.4f}, "
+                f"Precision: {mean_metrics['precision']:.4f}, "
+                f"Recall: {mean_metrics['recall']:.4f}, "
+                f"F1: {mean_metrics['f1']:.4f}"
             )
 
-            return mean_cv_score
+            # Return balanced accuracy as the optimization target
+            return mean_metrics["balanced_accuracy"]
 
         except Exception as e:
             console.print(f"[red]Error in trial {trial.number}: {str(e)}[/red]")
@@ -361,6 +438,17 @@ def log_optuna_study_to_mlflow(
         mlflow.log_metric("best_balanced_accuracy", best_trial.value)
         mlflow.log_param("best_trial_number", best_trial.number)
 
+        # Log all metrics from the best trial
+        metrics_to_log = ["balanced_accuracy", "accuracy", "precision", "recall", "f1"]
+        for metric in metrics_to_log:
+            mean_key = f"cv_mean_{metric}"
+            std_key = f"cv_std_{metric}"
+            if mean_key in best_trial.user_attrs:
+                mlflow.log_metric(
+                    f"best_{metric}_mean", best_trial.user_attrs[mean_key]
+                )
+                mlflow.log_metric(f"best_{metric}_std", best_trial.user_attrs[std_key])
+
         # Log best hyperparameters
         for param_name, param_value in best_trial.params.items():
             mlflow.log_param(f"best_{param_name}", param_value)
@@ -386,12 +474,39 @@ def log_optuna_study_to_mlflow(
 
         # Log score statistics from completed trials
         if completed_trials:
-            scores = [t.value for t in completed_trials]
-            mlflow.log_metric("mean_cv_score", np.mean(scores))
-            mlflow.log_metric("std_cv_score", np.std(scores))
-            mlflow.log_metric("min_cv_score", np.min(scores))
-            mlflow.log_metric("max_cv_score", np.max(scores))
-            mlflow.log_metric("median_cv_score", np.median(scores))
+            # Log balanced accuracy statistics (primary optimization metric)
+            balanced_accuracy_scores = [t.value for t in completed_trials]
+            mlflow.log_metric("mean_cv_score", np.mean(balanced_accuracy_scores))
+            mlflow.log_metric("std_cv_score", np.std(balanced_accuracy_scores))
+            mlflow.log_metric("min_cv_score", np.min(balanced_accuracy_scores))
+            mlflow.log_metric("max_cv_score", np.max(balanced_accuracy_scores))
+            mlflow.log_metric("median_cv_score", np.median(balanced_accuracy_scores))
+
+            # Log statistics for all metrics across all completed trials
+            metrics_to_log = [
+                "balanced_accuracy",
+                "accuracy",
+                "precision",
+                "recall",
+                "f1",
+            ]
+            for metric in metrics_to_log:
+                mean_key = f"cv_mean_{metric}"
+                std_key = f"cv_std_{metric}"
+
+                # Collect scores for this metric from all completed trials
+                metric_scores = []
+                for trial in completed_trials:
+                    if mean_key in trial.user_attrs:
+                        metric_scores.append(trial.user_attrs[mean_key])
+
+                if metric_scores:
+                    mlflow.log_metric(
+                        f"all_trials_mean_{metric}", np.mean(metric_scores)
+                    )
+                    mlflow.log_metric(f"all_trials_std_{metric}", np.std(metric_scores))
+                    mlflow.log_metric(f"all_trials_min_{metric}", np.min(metric_scores))
+                    mlflow.log_metric(f"all_trials_max_{metric}", np.max(metric_scores))
 
         # Create and log optimization history plot
         try:

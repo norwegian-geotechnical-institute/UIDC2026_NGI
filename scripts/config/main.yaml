@@ -96,7 +96,7 @@ experiment:
   site_info: []
   label: "collapse"
   undersample_level: 2000
-  oversample_level: 500
+  oversample_level: 0
   tbm_classification:
     0: regular
     1: collapse
