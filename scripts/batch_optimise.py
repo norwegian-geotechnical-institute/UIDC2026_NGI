@@ -153,6 +153,9 @@ def main(cfg: DictConfig) -> int:
     console.print(f"Models to optimise: {', '.join(MODELS)}")
     console.print(f"Total models: {len(MODELS)}")
 
+    # Set MLflow experiment name for batch optimization
+    cfg.mlflow.experiment_name = "batch_hyperparameter_optimization"
+
     # Initialize Hydra and load base configuration
     try:
         # Track results

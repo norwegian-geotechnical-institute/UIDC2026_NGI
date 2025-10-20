@@ -2,6 +2,10 @@ from pprint import pformat
 from typing import Any
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")  # Set non-interactive backend before importing pyplot
+
 import mlflow
 import numpy as np
 import optuna
@@ -545,18 +549,6 @@ def log_optuna_study_to_mlflow(
                         fig_importance.get_figure(), "param_importances.png"
                     )
                     plt.close(fig_importance.get_figure())
-
-            # Create parallel coordinate plot
-            if len(completed_trials) >= 3:  # Lowered threshold for testing
-                fig_parallel = vis.matplotlib.plot_parallel_coordinate(study)
-                if hasattr(fig_parallel, "figure"):
-                    mlflow.log_figure(fig_parallel.figure, "parallel_coordinate.png")
-                    plt.close(fig_parallel.figure)
-                elif hasattr(fig_parallel, "get_figure"):
-                    mlflow.log_figure(
-                        fig_parallel.get_figure(), "parallel_coordinate.png"
-                    )
-                    plt.close(fig_parallel.get_figure())
 
         except ImportError:
             console = Console()

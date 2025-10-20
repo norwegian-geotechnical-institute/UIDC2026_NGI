@@ -22,6 +22,10 @@ def main(cfg: DictConfig) -> None:
 
     # Get model name from config
     model_name = pcfg.model.name
+
+    # Set MLflow experiment name for single model optimization
+    pcfg.mlflow.experiment_name = f"hyperparameter_optimization_{model_name}"
+
     console.print(
         f"[bold green]Optimizing hyperparameters for: {model_name}[/bold green]"
     )
