@@ -61,8 +61,17 @@ def main(cfg: DictConfig) -> None:
 
     # Evaluate model
     console.print("[bold green]Evaluating model...[/bold green]")
+    
+    # Prepare cost matrix dictionary from config
+    cost_matrix_dict = {
+        "tn_cost": pcfg.experiment.cost_matrix.tn_cost,
+        "fp_cost": pcfg.experiment.cost_matrix.fp_cost,
+        "fn_cost": pcfg.experiment.cost_matrix.fn_cost,
+        "tp_cost": pcfg.experiment.cost_matrix.tp_cost,
+    }
+    
     metrics, artifacts = evaluate_model(
-        y_test, y_pred, pcfg.experiment.tbm_classification
+        y_test, y_pred, pcfg.experiment.tbm_classification, cost_matrix_dict
     )
 
     # log results and config to mlflow

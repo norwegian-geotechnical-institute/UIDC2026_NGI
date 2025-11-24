@@ -67,7 +67,11 @@ def pairplot(
                     alpha=1,
                     s=2,
                 )
+            
+            # Set y-axis label for leftmost column
+            if j == 0:
                 ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=8)
+            
             ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=8)
             ax.tick_params(axis="both", labelsize=8)
 
@@ -159,30 +163,162 @@ def plot_confusion_matrix(
     return fig
 
 
-def _plot_param(ax, dataframe, parameter):
-    ax.plot(dataframe["Tunnellength [m]"], dataframe[parameter], color="black")
+def _detect_gaps(tunnel_length, threshold=1.0):
+    """
+    Detect gaps in tunnel length data.
+    
+    Parameters:
+    -----------
+    tunnel_length : array-like
+        Tunnel length values
+    threshold : float
+        Minimum gap size to detect (in meters)
+    
+    Returns:
+    --------
+    list of tuples
+        Each tuple contains (start_position, end_position) of a gap
+    """
+    gaps = []
+    for i in range(len(tunnel_length) - 1):
+        diff = tunnel_length.iloc[i + 1] - tunnel_length.iloc[i]
+        if diff > threshold:
+            gaps.append((tunnel_length.iloc[i], tunnel_length.iloc[i + 1]))
+    return gaps
+
+
+def _break_at_gaps(x, y, gaps):
+    """
+    Insert NaN values at gap locations to break line plots.
+    
+    Parameters:
+    -----------
+    x : array-like
+        X-axis values (tunnel length)
+    y : array-like
+        Y-axis values (parameter values)
+    gaps : list of tuples
+        Gap intervals from _detect_gaps
+    
+    Returns:
+    --------
+    tuple of (x_broken, y_broken)
+        Arrays with NaN inserted at gap positions
+    """
+    if len(gaps) == 0:
+        return np.array(x), np.array(y)
+    
+    # Create a copy as lists for manipulation
+    x_list = list(x.values if hasattr(x, 'values') else x)
+    y_list = list(y.values if hasattr(y, 'values') else y)
+    
+    # Track insertions (process from end to beginning to maintain indices)
+    for gap_start, gap_end in reversed(gaps):
+        # Find the index right after gap_start
+        insert_idx = None
+        for i in range(len(x_list)):
+            if x_list[i] > gap_start:
+                insert_idx = i
+                break
+        
+        # Insert NaN to break the line at the gap
+        if insert_idx is not None and insert_idx > 0:
+            x_list.insert(insert_idx, np.nan)
+            y_list.insert(insert_idx, np.nan)
+    
+    return np.array(x_list), np.array(y_list)
+
+
+def _add_collapse_shading(ax, dataframe):
+    """
+    Add red shading for collapse regions across the full height of the plot.
+    
+    Parameters:
+    -----------
+    ax : matplotlib.axes.Axes
+        Axis to add shading to
+    dataframe : pd.DataFrame
+        Data containing tunnel length and collapse labels
+    """
+    x = dataframe["Tunnellength [m]"]
+    collapse = dataframe["collapse"]
+    
+    # Fill regions where collapse == 1 across full plot height
+    ax.fill_between(x, 0, 1, where=(collapse == 1), 
+                     color='red', alpha=0.2, transform=ax.get_xaxis_transform(), zorder=-1)
+
+
+def _plot_param(ax, dataframe, parameter, gaps, show_gap_markers=False):
+    """
+    Plot a parameter with gap handling and collapse shading.
+    
+    Parameters:
+    -----------
+    ax : matplotlib.axes.Axes
+        Axis to plot on
+    dataframe : pd.DataFrame
+        Data containing tunnel length and parameter
+    parameter : str
+        Parameter name to plot
+    gaps : list of tuples
+        Gap intervals
+    show_gap_markers : bool
+        Whether to show X markers over gaps
+    """
+    x = dataframe["Tunnellength [m]"]
+    y = dataframe[parameter]
+    
+    # Add collapse shading first (so it's in background)
+    _add_collapse_shading(ax, dataframe)
+    
+    # Break lines at gaps
+    x_broken, y_broken = _break_at_gaps(x, y, gaps)
+    
+    ax.plot(x_broken, y_broken, color="black", linewidth=0.5)
     ax.set_ylabel(parameter)
-    ax.set_xlim(
-        left=dataframe["Tunnellength [m]"].min(),
-        right=dataframe["Tunnellength [m]"].max(),
-    )
-    # ax.legend()
+    ax.set_xlim(left=x.min(), right=x.max())
     ax.grid(alpha=0.5)
+    
+    # Add gap markers if requested
+    if show_gap_markers:
+        for gap_start, gap_end in gaps:
+            ax.axvspan(gap_start, gap_end, color='gray', alpha=0.3, hatch='///', zorder=10)
 
 
-def plot_tbm_parameters(df):
-    """ """
-    fig, axs = plt.subplots(ncols=1, nrows=8, figsize=(18, 10), sharex=True)
+def plot_tbm_parameters(df, gap_threshold=1.0, show_gap_markers=False):
+    """
+    Plot TBM parameters along tunnel length with gap handling and collapse visualization.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Data containing TBM parameters
+    gap_threshold : float
+        Minimum gap size in meters to detect and handle (default: 1.0)
+    show_gap_markers : bool
+        Whether to show hatched regions over data gaps (default: False)
+    
+    Returns:
+    --------
+    matplotlib.figure.Figure
+        The figure object
+    """
+    # Detect gaps in the data
+    gaps = _detect_gaps(df["Tunnellength [m]"], threshold=gap_threshold)
+    
+    fig, axs = plt.subplots(ncols=1, nrows=5, figsize=(18, 8), sharex=True)
 
-    _plot_param(axs[0], df, "penetration\n[mm/rev]")
-    _plot_param(axs[1], df, "advance rate\n[mm/min]")
-    _plot_param(axs[2], df, "cutterhead rotations\n[rpm]")
-    _plot_param(axs[3], df, "thrust\n[kN]")
-    _plot_param(axs[4], df, "cutterhead torque\n[kNm]")
-    _plot_param(axs[5], df, "Field Penetration Index")
-    _plot_param(axs[6], df, "drilling efficiency index\nTPI")
-    _plot_param(axs[7], df, "collapse")
-    axs[7].set_xlabel("Tunnellength [m]")
+    _plot_param(axs[0], df, "penetration\n[mm/rev]", gaps, show_gap_markers)
+    _plot_param(axs[1], df, "advance rate\n[mm/min]", gaps, show_gap_markers)
+    _plot_param(axs[2], df, "cutterhead rotations\n[rpm]", gaps, show_gap_markers)
+    _plot_param(axs[3], df, "thrust\n[kN]", gaps, show_gap_markers)
+    _plot_param(axs[4], df, "cutterhead torque\n[kNm]", gaps, show_gap_markers)
+    axs[4].set_xlabel("Tunnellength [m]")
+    
+    # Add legend for collapse regions on the top plot
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor='red', alpha=0.2, label='Collapse')]
+    axs[0].legend(handles=legend_elements, loc='upper right')
 
     return fig
 
@@ -197,6 +333,7 @@ def plot_tbm_confusion_matrix(
     show_percentages: bool = True,
     cmap: str = "Greys",
     dpi: int = 300,
+    cell_colors: dict[str, str] | None = None,
 ) -> plt.Figure:
     """
     Create a confusion matrix plot matching the style from A_main.py and preliminary_tests.py.
@@ -223,9 +360,13 @@ def plot_tbm_confusion_matrix(
     show_percentages : bool, optional
         Whether to show percentage annotations in cells. Default is True
     cmap : str, optional
-        Colormap name. Default is 'Greys'
+        Colormap name. Default is 'Greys'. Ignored if cell_colors is provided.
     dpi : int, optional
         DPI for saved figures. Default is 300
+    cell_colors : dict[str, str], optional
+        Dictionary with keys 'tn_color', 'fp_color', 'fn_color', 'tp_color'
+        to specify custom colors for each cell. If provided, overrides cmap.
+        Example: {'tn_color': '#90EE90', 'fp_color': '#FFD700', 'fn_color': '#FF6B6B', 'tp_color': '#4ECDC4'}
 
     Returns:
     --------
@@ -250,11 +391,44 @@ def plot_tbm_confusion_matrix(
     # Create figure and axis
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Display confusion matrix as image
-    im = ax.imshow(cm_display, interpolation="nearest", cmap=getattr(plt.cm, cmap))
-
-    # Add colorbar
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    # Use custom colors if provided, otherwise use colormap
+    if cell_colors is not None:
+        # Create a custom colored confusion matrix with opacity based on values
+        # For binary classification: [[TN, FP], [FN, TP]]
+        color_matrix = np.array([
+            [cell_colors.get('tn_color', '#90EE90'), cell_colors.get('fp_color', '#FFD700')],
+            [cell_colors.get('fn_color', '#FF6B6B'), cell_colors.get('tp_color', '#4ECDC4')]
+        ])
+        
+        # Normalize values to determine opacity (0-1 range)
+        if normalize is not None:
+            # For percentage display, use percentage values for opacity
+            opacity_values = cm_display / 100.0
+        else:
+            # For count display, normalize by max value
+            opacity_values = cm_display / cm_display.max()
+        
+        # Display each cell with its specific color and opacity
+        for i in range(cm_display.shape[0]):
+            for j in range(cm_display.shape[1]):
+                # Convert hex color to RGB and apply opacity
+                import matplotlib.colors as mcolors
+                base_color = mcolors.to_rgb(color_matrix[i, j])
+                opacity = opacity_values[i, j]
+                
+                ax.add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, 
+                                          facecolor=base_color, 
+                                          alpha=opacity,
+                                          edgecolor='white', linewidth=2))
+        
+        # Set axis limits
+        ax.set_xlim(-0.5, cm_display.shape[1] - 0.5)
+        ax.set_ylim(cm_display.shape[0] - 0.5, -0.5)
+    else:
+        # Display confusion matrix as image with colormap
+        im = ax.imshow(cm_display, interpolation="nearest", cmap=getattr(plt.cm, cmap))
+        # Add colorbar
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # Get class labels from mapping
     class_labels = [class_mapping.get(i, str(i)) for i in sorted(class_mapping.keys())]
@@ -267,7 +441,7 @@ def plot_tbm_confusion_matrix(
         yticklabels=class_labels,
         ylabel="True label",
         xlabel="Predicted label",
-        title=f'Confusion Matrix{f" ({model_name})" if model_name else ""}',
+        # title=f'Confusion Matrix{f" ({model_name})" if model_name else ""}',
     )
 
     # Rotate x-axis labels
@@ -279,8 +453,17 @@ def plot_tbm_confusion_matrix(
             for j in range(cm_display.shape[1]):
                 value = cm_display[i, j]
 
-                # Choose text color based on cell value (white for dark cells, black for light cells)
-                text_color = "white" if value > (cm_display.max() / 2) else "black"
+                # Choose text color based on cell opacity/value
+                # For custom colors, base on normalized value; for colormap, use original logic
+                if cell_colors is not None:
+                    if normalize is not None:
+                        # Use percentage value to determine text color
+                        text_color = "white" if value > 50 else "black"
+                    else:
+                        # Use normalized count
+                        text_color = "white" if value > (cm_display.max() / 2) else "black"
+                else:
+                    text_color = "white" if value > (cm_display.max() / 2) else "black"
 
                 # Format text based on whether values are percentages or counts
                 if normalize is not None:

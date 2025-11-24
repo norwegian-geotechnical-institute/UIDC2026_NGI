@@ -4,7 +4,7 @@ Repository for code and results of NGI's contribution to the 1st International U
 
 ## Overview
 
-This project develops machine learning models for predicting Tunnel Boring Machine (TBM) collapse events using operational data from the Yingsong Water Diversion Project. The codebase includes comprehensive data preprocessing, feature engineering, hyperparameter optimization, and model evaluation pipelines with MLflow experiment tracking.
+This project develops machine learning models for predicting Tunnel Boring Machine (TBM) collapse events using operational data from the Yinsong Water Diversion Project. The codebase includes comprehensive data preprocessing, feature engineering, hyperparameter optimization, and model evaluation pipelines with MLflow experiment tracking.
 
 ## Project Structure
 

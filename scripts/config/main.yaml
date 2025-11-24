@@ -1,5 +1,5 @@
 defaults: #points to sub-configs
-  - model: knn.yaml # knn.yaml, xgboost_native.yaml
+  - model: xgboost.yaml # knn.yaml
   - _self_ # main overrides sub-cfg in case of duplicates
 
 # EXPERIMENT CONFIG
@@ -15,7 +15,7 @@ hydra:
 
 experiment:
   save_model: False
-  seed: 42
+  seed: 421
   train_fraction: 0.75
   features:
     [
@@ -79,10 +79,10 @@ experiment:
       "T(P*V/N)-slope",
       "T(P*V/N)-a",
       "T(P*V/N)-R2",
-      "Fpi",
+      # "Fpi",
       "P*V/N",
       "T/P",
-      "Tpi",
+      # "Tpi",
       "dt",
       "dz",
       "workP",
@@ -100,6 +100,21 @@ experiment:
   tbm_classification:
     0: regular
     1: collapse
+  cost_matrix:
+    # Cost values in time units (e.g., hours)
+    # These represent the cost/impact of each prediction outcome
+    tn_cost: 1.0 # True Negative: Correctly predicted regular excavation (no cost)
+    fp_cost: 10.0 # False Positive: False alarm - predicted collapse but was regular (investigation time, delays)
+    fn_cost: 240.0 # False Negative: Missed collapse - predicted regular but was collapse (equipment damage, safety risk, major delays)
+    tp_cost: 10.0 # True Positive: Correctly predicted collapse (no cost, or could add if there's a response cost)
+
+  # Color scheme for confusion matrix and analysis plots
+  # Colors correspond to: TN (True Negative), FP (False Positive), FN (False Negative), TP (True Positive)
+  confusion_matrix_colors:
+    tn_color: "#90EE90" # Light green
+    fp_color: "#FFD700" # Gold/Yellow
+    fn_color: "#FF6B6B" # Red
+    tp_color: "#4ECDC4" # Teal/Cyan
 
 preprocess:
   outlier_feature: ""

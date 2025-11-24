@@ -9,6 +9,38 @@ class ModelConfig(BaseModel):
     params: dict[str, Any] = Field(..., description="Parameters for the model")
 
 
+# Cost Matrix Configuration
+class CostMatrixConfig(BaseModel):
+    tn_cost: float = Field(
+        0.0, description="Cost for True Negatives (correct regular prediction)"
+    )
+    fp_cost: float = Field(
+        5.0, description="Cost for False Positives (false alarm - predict collapse when regular)"
+    )
+    fn_cost: float = Field(
+        100.0, description="Cost for False Negatives (missed collapse - predict regular when collapse)"
+    )
+    tp_cost: float = Field(
+        0.0, description="Cost for True Positives (correct collapse prediction)"
+    )
+
+
+# Confusion Matrix Colors Configuration
+class ConfusionMatrixColorsConfig(BaseModel):
+    tn_color: str = Field(
+        "#90EE90", description="Color for True Negatives (light green)"
+    )
+    fp_color: str = Field(
+        "#FFD700", description="Color for False Positives (gold/yellow)"
+    )
+    fn_color: str = Field(
+        "#FF6B6B", description="Color for False Negatives (red)"
+    )
+    tp_color: str = Field(
+        "#4ECDC4", description="Color for True Positives (teal/cyan)"
+    )
+
+
 # Experiment Configuration
 class ExperimentConfig(BaseModel):
     save_model: bool = Field(False, description="Whether to save the model")
@@ -27,6 +59,14 @@ class ExperimentConfig(BaseModel):
     oversample_level: int = Field(..., description="Level for oversampling")
     tbm_classification: dict[int, str] = Field(
         ..., description="Soil classification dictionary"
+    )
+    cost_matrix: CostMatrixConfig = Field(
+        default_factory=lambda: CostMatrixConfig(),
+        description="Cost matrix for prediction errors in time units (e.g., hours)"
+    )
+    confusion_matrix_colors: ConfusionMatrixColorsConfig = Field(
+        default_factory=lambda: ConfusionMatrixColorsConfig(),
+        description="Color scheme for confusion matrix and analysis plots"
     )
 
 
