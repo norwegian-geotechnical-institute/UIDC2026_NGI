@@ -9,7 +9,7 @@ import joblib
 from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
 
-from tbm_ml.hyperparameter_optimisation import run_optimisation
+from tbm_ml.hyperparameter_optimization import run_optimization
 from tbm_ml.preprocess_funcs import get_dataset
 from tbm_ml.schema_config import Config
 
@@ -47,12 +47,13 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Run optimization with cross-validation and MLflow logging
-    study = run_optimisation(
-        model_name=model_name,
+    study = run_optimization(
+        model_name=pcfg.model.name,
         X=X,
         y=y,
         oversample_level=pcfg.experiment.oversample_level,
         undersample_level=pcfg.experiment.undersample_level,
+        undersample_ratio=pcfg.experiment.undersample_ratio,
         n_trials=pcfg.optuna.n_trials,
         cv_folds=pcfg.optuna.cv_folds,
         mlflow_path=Path(pcfg.mlflow.path),

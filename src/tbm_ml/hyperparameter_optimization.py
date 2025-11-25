@@ -228,7 +228,8 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
         X: pd.DataFrame,
         y: pd.Series,
         oversample_level: int,
-        undersample_level: int,
+        undersample_level: int | None = None,
+        undersample_ratio: float | None = None,
     ) -> float:
 
         console = Console()
@@ -275,8 +276,9 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
                         X_val_fold,
                         y_train_fold,
                         y_val_fold,
-                        undersample_level,
-                        oversample_level,
+                        undersample_level=undersample_level,
+                        undersample_ratio=undersample_ratio,
+                        oversample_level=oversample_level,
                     )
 
                 # Calculate all metrics for this fold
@@ -326,13 +328,14 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
     return objective
 
 
-# Run Optuna optimisation
-def run_optimisation(
+# Run Optuna optimization
+def run_optimization(
     model_name: str,
     X: pd.DataFrame,
     y: pd.Series,
     oversample_level: int,
-    undersample_level: int,
+    undersample_level: int | None = None,
+    undersample_ratio: float | None = None,
     n_trials: int = 100,
     cv_folds: int = 5,
     study_name: str = None,
@@ -342,7 +345,7 @@ def run_optimisation(
 ) -> Any:
 
     if study_name is None:
-        study_name = f"{model_name}_hyperparameter_optimisation"
+        study_name = f"{model_name}_hyperparameter_optimization"
 
     # Create objective function for this model
     objective_func = create_objective_function(model_name, cv_folds)
@@ -358,7 +361,7 @@ def run_optimisation(
     start_time = time.time()
 
     study.optimize(
-        lambda trial: objective_func(trial, X, y, oversample_level, undersample_level),
+        lambda trial: objective_func(trial, X, y, oversample_level, undersample_level, undersample_ratio),
         n_trials=n_trials,
     )
 

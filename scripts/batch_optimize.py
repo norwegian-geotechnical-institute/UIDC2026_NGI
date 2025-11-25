@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple batch hyperparameter optimisation script.
-This script runs optimisation for each model directly without subprocess.
+Simple batch hyperparameter optimization script.
+This script runs optimization for each model directly without subprocess.
 """
 
 import os
@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 
 import hydra
+import pandas as pd
 import yaml
 from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
@@ -21,13 +22,13 @@ from rich.progress import Progress, track
 # Add src to path so we can import our modules
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from tbm_ml.hyperparameter_optimisation import run_optimisation
+from tbm_ml.hyperparameter_optimization import run_optimization
 from tbm_ml.preprocess_funcs import get_dataset
 from tbm_ml.schema_config import Config
+from tbm_ml.train_eval_funcs import train_predict, evaluate_model
 
-# List of all models to optimise
+# List of all models to optimize
 MODELS = [
-    # "xgboost_native",
     "xgboost",
     "random_forest",
     "extra_trees",
@@ -37,16 +38,16 @@ MODELS = [
     "logistic_regression",
     "svm",
     "knn",
-    # "gaussian_process",
+    "gaussian_process",
 ]
 
 
-def optimise_single_model(
+def optimize_single_model(
     model_name: str, console: Console, base_config: DictConfig
 ) -> dict:
-    """optimise a single model and return results."""
+    """optimize a single model and return results."""
     console.print(
-        f"\n[bold blue]🚀 Starting optimisation for {model_name}...[/bold blue]"
+        f"\n[bold blue]🚀 Starting optimization for {model_name}...[/bold blue]"
     )
 
     try:
@@ -71,13 +72,14 @@ def optimise_single_model(
             f"Using {pcfg.optuna.cv_folds}-fold cross-validation for hyperparameter optimization"
         )
 
-        # Run optimisation with cross-validation and MLflow logging
-        study = run_optimisation(
+        # Run optimization with cross-validation and MLflow logging
+        study = run_optimization(
             model_name=model_name,
             X=X,
             y=y,
             oversample_level=pcfg.experiment.oversample_level,
             undersample_level=pcfg.experiment.undersample_level,
+            undersample_ratio=pcfg.experiment.undersample_ratio,
             n_trials=pcfg.optuna.n_trials,
             cv_folds=pcfg.optuna.cv_folds,
             mlflow_path=Path(pcfg.mlflow.path),
@@ -96,6 +98,50 @@ def optimise_single_model(
         )
         console.print(f"⏱️ Duration: {duration:.1f} minutes")
         console.print(f"🎯 Best balanced accuracy: {best_score:.4f}")
+        
+        # Evaluate on test set with best parameters
+        console.print("[bold green]Evaluating on test set...[/bold green]")
+        df_test = get_dataset(pcfg.dataset.path_model_ready_test)
+        X_test = df_test[pcfg.experiment.features]
+        y_test = df_test[pcfg.experiment.label]
+        
+        # Train final model with best parameters
+        y_pred = train_predict(
+            model_name=model_name,
+            model_params=best_trial.params,
+            X_train=X,
+            X_test=X_test,
+            y_train=y,
+            y_test=y_test,
+            undersample_level=pcfg.experiment.undersample_level,
+            undersample_ratio=pcfg.experiment.undersample_ratio,
+            oversample_level=pcfg.experiment.oversample_level,
+            save_model=False,
+            random_seed=pcfg.experiment.seed,
+        )
+        
+        # Evaluate and get metrics
+        cost_matrix = {
+            "tn_cost": pcfg.cost_matrix.tn_cost,
+            "fp_cost": pcfg.cost_matrix.fp_cost,
+            "fn_cost": pcfg.cost_matrix.fn_cost,
+            "tp_cost": pcfg.cost_matrix.tp_cost,
+            "time_per_regular_advance": pcfg.cost_matrix.time_per_regular_advance,
+        }
+        
+        test_metrics, _ = evaluate_model(
+            y_test=y_test,
+            y_pred=y_pred,
+            class_mapping=pcfg.experiment.class_mapping,
+            cost_matrix=cost_matrix,
+        )
+        
+        console.print(f"📊 Test Accuracy: {test_metrics['accuracy']:.4f}")
+        console.print(f"📊 Test Balanced Accuracy: {test_metrics['balanced_accuracy']:.4f}")
+        console.print(f"📊 Test Recall: {test_metrics['recall']:.4f}")
+        console.print(f"📊 Test Precision: {test_metrics['precision']:.4f}")
+        console.print(f"📊 Test F1-Score: {test_metrics['f1']:.4f}")
+        console.print(f"💰 Test Average Cost: {test_metrics['cost_average']:.4f}")
 
         # Save results
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M")
@@ -110,7 +156,7 @@ def optimise_single_model(
             "performance": {
                 "balanced_accuracy": best_score,
                 "trial_number": best_trial.number,
-                "optimisation_date": timestamp,
+                "optimization_date": timestamp,
                 "duration_minutes": duration,
             },
         }
@@ -127,6 +173,12 @@ def optimise_single_model(
             "duration": duration,
             "trials": len(study.trials),
             "file": str(yaml_filename),
+            "test_accuracy": test_metrics["accuracy"],
+            "test_balanced_accuracy": test_metrics["balanced_accuracy"],
+            "test_recall": test_metrics["recall"],
+            "test_precision": test_metrics["precision"],
+            "test_f1": test_metrics["f1"],
+            "test_cost_average": test_metrics["cost_average"],
         }
 
     except Exception as e:
@@ -148,9 +200,9 @@ def main(cfg: DictConfig) -> int:
     console = Console()
 
     console.print(
-        "[bold magenta]🎯 Batch Hyperparameter Optimisation for All Models[/bold magenta]"
+        "[bold magenta]🎯 Batch Hyperparameter optimization for All Models[/bold magenta]"
     )
-    console.print(f"Models to optimise: {', '.join(MODELS)}")
+    console.print(f"Models to optimize: {', '.join(MODELS)}")
     console.print(f"Total models: {len(MODELS)}")
 
     # Set MLflow experiment name for batch optimization
@@ -162,11 +214,11 @@ def main(cfg: DictConfig) -> int:
         results = []
         start_time = time.time()
 
-        # Run optimisation for each model
+        # Run optimization for each model
         for i, model in enumerate(MODELS, 1):
             console.rule(f"Model {i}/{len(MODELS)}: {model}")
 
-            result = optimise_single_model(model, console, cfg)
+            result = optimize_single_model(model, console, cfg)
             results.append(result)
 
         # Final summary
@@ -178,7 +230,7 @@ def main(cfg: DictConfig) -> int:
 
         console.rule("[bold]Final Results")
         console.print(
-            f"[bold green]✅ Successful optimisations ({len(successful)}):[/bold green]"
+            f"[bold green]✅ Successful optimizations ({len(successful)}):[/bold green]"
         )
         for result in successful:
             console.print(
@@ -187,7 +239,7 @@ def main(cfg: DictConfig) -> int:
 
         if failed:
             console.print(
-                f"\n[bold red]❌ Failed optimisations ({len(failed)}):[/bold red]"
+                f"\n[bold red]❌ Failed optimizations ({len(failed)}):[/bold red]"
             )
             for result in failed:
                 console.print(
@@ -205,26 +257,49 @@ def main(cfg: DictConfig) -> int:
         summary_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(summary_file, "w") as f:
-            f.write("Batch Hyperparameter optimisation Results\n")
+            f.write("Batch Hyperparameter optimization Results\n")
             f.write("=" * 50 + "\n\n")
             f.write(f"Total duration: {total_duration:.2f} hours\n")
             f.write(
                 f"Success rate: {len(successful)}/{len(MODELS)} ({len(successful)/len(MODELS)*100:.1f}%)\n\n"
             )
 
-            f.write("Successful optimisations:\n")
+            f.write("Successful optimizations:\n")
             for result in successful:
                 f.write(f"  - {result['model']}: {result['score']:.4f}\n")
 
             if failed:
-                f.write(f"\nFailed optimisations:\n")
+                f.write(f"\nFailed optimizations:\n")
                 for result in failed:
                     f.write(
                         f"  - {result['model']}: {result.get('error', 'Unknown error')}\n"
                     )
 
         console.print(f"\n[bold blue]📝 Summary saved to: {summary_file}[/bold blue]")
-        console.print("[bold green]🎉 Batch optimisation complete![/bold green]")
+        
+        # Save CSV with all metrics
+        if successful:
+            csv_file = Path("experiments/hyperparameters/batch_results.csv")
+            
+            # Create DataFrame with results
+            csv_data = []
+            for result in successful:
+                csv_data.append({
+                    "Classifier": result["model"].upper().replace("_", ""),
+                    "Accuracy ↑": f"{result['test_accuracy']:.4f}",
+                    "Balanced Accuracy ↑": f"{result['test_balanced_accuracy']:.4f}",
+                    "Recall ↑": f"{result['test_recall']:.4f}",
+                    "Precision ↑": f"{result['test_precision']:.4f}",
+                    "F1-Score ↑": f"{result['test_f1']:.4f}",
+                    "Average Cost ↓": f"{result['test_cost_average']:.4f}",
+                })
+            
+            df_results = pd.DataFrame(csv_data)
+            df_results.to_csv(csv_file, index=False)
+            
+            console.print(f"[bold blue]📊 Results CSV saved to: {csv_file}[/bold blue]")
+        
+        console.print("[bold green]🎉 Batch optimization complete![/bold green]")
 
         return 0 if not failed else 1
 
