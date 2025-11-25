@@ -21,8 +21,10 @@ dependencies = [
     "pyod>=2.0.5",
     "scikit-learn",
     "scipy",
+    "setuptools>=80.9.0",
     "tqdm",
     "xgboost>=3.0.5",
+    "ydata-profiling>=4.18.0",
 ]
 
 [dependency-groups]
