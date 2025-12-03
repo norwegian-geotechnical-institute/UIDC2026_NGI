@@ -41,8 +41,9 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 
 - **Outlier Detection**: Isolation Forest-based outlier removal
 - **Class Imbalance Handling**:
-  - RandomUnderSampler for majority class reduction
+  - RandomUnderSampler for majority class reduction (ratio-based or absolute)
   - SMOTE for minority class oversampling
+  - Configurable undersampling ratio (e.g., 1.0 = 1:1 majority:minority ratio)
 - **Feature Scaling**: StandardScaler normalization
 - **Train/Test Split**: Stratified split preserving class distributions
 
@@ -146,7 +147,8 @@ data:
   test_path: "data/model_ready/dataset_test.csv"
 
 preprocessing:
-  undersample_level: 2000  # Majority class samples
+  undersample_level: null  # Absolute number (overrides ratio if set), or null to use ratio
+  undersample_ratio: 1.0   # Majority:minority ratio (1.0 = 1:1, 2.0 = 2:1, etc.)
   oversample_level: 0      # Minority class SMOTE (0=disabled)
   outlier_removal: true
 
