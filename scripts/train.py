@@ -54,9 +54,10 @@ def main(cfg: DictConfig) -> None:
         X_test,
         y_train,
         y_test,
-        pcfg.experiment.undersample_level,
-        pcfg.experiment.oversample_level,
-        pcfg.experiment.save_model,
+        undersample_level=pcfg.experiment.undersample_level,
+        undersample_ratio=pcfg.experiment.undersample_ratio,
+        oversample_level=pcfg.experiment.oversample_level,
+        save_model=pcfg.experiment.save_model,
     )
 
     # Evaluate model
