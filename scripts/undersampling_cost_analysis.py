@@ -23,6 +23,7 @@ from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
 from rich.progress import track
 from rich.table import Table
+from sklearn.model_selection import StratifiedKFold
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
@@ -55,25 +56,117 @@ def analyze_undersampling_fraction(
     cost_matrix: dict,
     class_mapping: dict,
     random_seed: int,
+    cv_folds: int = 5,
 ) -> dict:
     """
-    Train and evaluate model with a specific undersampling fraction.
+    Train and evaluate model with a specific undersampling fraction using stratified cross-validation.
     
     Parameters:
     -----------
     undersample_fraction : float
         Ratio of majority to minority class (e.g., 2.0 means 2:1 ratio)
+    cv_folds : int
+        Number of folds for stratified cross-validation (default: 5)
     
     Returns:
     --------
-    dict with metrics and predictions
+    dict with mean and std metrics from cross-validation, plus test set predictions
     """
     # Calculate undersample_level based on fraction
     minority_count = int(y_train.sum())  # Assuming binary with 1 as minority
     undersample_level = int(minority_count * undersample_fraction)
     
-    # Train and predict
-    y_pred = train_predict(
+    # Perform stratified k-fold cross-validation on training set
+    skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
+    
+    cv_metrics = {
+        "cost_average": [],
+        "tn_avg_cost": [],
+        "fp_avg_cost": [],
+        "fn_avg_cost": [],
+        "tp_avg_cost": [],
+        "accuracy": [],
+        "balanced_accuracy": [],
+        "sensitivity": [],
+        "specificity": [],
+        "precision": [],
+        "f1_score": [],
+        "tn_count": [],
+        "fp_count": [],
+        "fn_count": [],
+        "tp_count": [],
+    }
+    
+    for train_idx, val_idx in skf.split(X_train, y_train):
+        X_train_fold = X_train.iloc[train_idx]
+        X_val_fold = X_train.iloc[val_idx]
+        y_train_fold = y_train.iloc[train_idx]
+        y_val_fold = y_train.iloc[val_idx]
+        
+        # Train and predict on validation fold
+        y_pred_fold = train_predict(
+            model_name=model_name,
+            model_params=model_params,
+            X_train=X_train_fold,
+            X_test=X_val_fold,
+            y_train=y_train_fold,
+            y_test=y_val_fold,
+            undersample_level=undersample_level,
+            oversample_level=oversample_level,
+            save_model=False,
+            random_seed=random_seed,
+        )
+        
+        # Calculate cost metrics for this fold
+        cost_metrics_fold = calculate_prediction_costs(
+            y_val_fold,
+            y_pred_fold,
+            tn_cost=cost_matrix["tn_cost"],
+            fp_cost=cost_matrix["fp_cost"],
+            fn_cost=cost_matrix["fn_cost"],
+            tp_cost=cost_matrix["tp_cost"],
+            time_per_regular_advance=cost_matrix.get("time_per_regular_advance", 1.0),
+        )
+        
+        # Calculate accuracy metrics for this fold
+        total_samples = len(y_val_fold)
+        tn = cost_metrics_fold["tn_count"]
+        fp = cost_metrics_fold["fp_count"]
+        fn = cost_metrics_fold["fn_count"]
+        tp = cost_metrics_fold["tp_count"]
+        
+        accuracy = (tp + tn) / total_samples
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        balanced_accuracy = (sensitivity + specificity) / 2
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        f1_score = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+        
+        # Store metrics for this fold
+        cv_metrics["cost_average"].append(cost_metrics_fold["average_cost"])
+        # Store individual cost components normalized per prediction
+        total_samples_fold = len(y_val_fold)
+        cv_metrics["tn_avg_cost"].append(cost_metrics_fold["tn_total_cost"] / total_samples_fold)
+        cv_metrics["fp_avg_cost"].append(cost_metrics_fold["fp_total_cost"] / total_samples_fold)
+        cv_metrics["fn_avg_cost"].append(cost_metrics_fold["fn_total_cost"] / total_samples_fold)
+        cv_metrics["tp_avg_cost"].append(cost_metrics_fold["tp_total_cost"] / total_samples_fold)
+        cv_metrics["accuracy"].append(accuracy)
+        cv_metrics["balanced_accuracy"].append(balanced_accuracy)
+        cv_metrics["sensitivity"].append(sensitivity)
+        cv_metrics["specificity"].append(specificity)
+        cv_metrics["precision"].append(precision)
+        cv_metrics["f1_score"].append(f1_score)
+        cv_metrics["tn_count"].append(tn)
+        cv_metrics["fp_count"].append(fp)
+        cv_metrics["fn_count"].append(fn)
+        cv_metrics["tp_count"].append(tp)
+    
+    # Calculate mean and std across folds
+    mean_metrics = {key: np.mean(values) for key, values in cv_metrics.items()}
+    std_metrics = {key: np.std(values) for key, values in cv_metrics.items()}
+    
+    # Train on full training set and predict on test set for final evaluation
+    y_pred_test = train_predict(
         model_name=model_name,
         model_params=model_params,
         X_train=X_train,
@@ -86,46 +179,52 @@ def analyze_undersampling_fraction(
         random_seed=random_seed,
     )
     
-    # Calculate cost metrics
-    cost_metrics = calculate_prediction_costs(
+    # Calculate test set metrics for confusion matrices
+    test_cost_metrics = calculate_prediction_costs(
         y_test,
-        y_pred,
+        y_pred_test,
         tn_cost=cost_matrix["tn_cost"],
         fp_cost=cost_matrix["fp_cost"],
         fn_cost=cost_matrix["fn_cost"],
         tp_cost=cost_matrix["tp_cost"],
+        time_per_regular_advance=cost_matrix.get("time_per_regular_advance", 1.0),
     )
-    
-    # Calculate accuracy metrics
-    total_samples = len(y_test)
-    tn = cost_metrics["tn_count"]
-    fp = cost_metrics["fp_count"]
-    fn = cost_metrics["fn_count"]
-    tp = cost_metrics["tp_count"]
-    
-    accuracy = (tp + tn) / total_samples
-    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-    balanced_accuracy = (sensitivity + specificity) / 2
     
     return {
         "undersample_fraction": undersample_fraction,
         "undersample_level": undersample_level,
-        "y_pred": y_pred,
-        "cost_total": cost_metrics["total_cost"],
-        "cost_average": cost_metrics["average_cost"],
-        "tn_count": cost_metrics["tn_count"],
-        "fp_count": cost_metrics["fp_count"],
-        "fn_count": cost_metrics["fn_count"],
-        "tp_count": cost_metrics["tp_count"],
-        "tn_total_cost": cost_metrics["tn_total_cost"],
-        "fp_total_cost": cost_metrics["fp_total_cost"],
-        "fn_total_cost": cost_metrics["fn_total_cost"],
-        "tp_total_cost": cost_metrics["tp_total_cost"],
-        "accuracy": accuracy,
-        "balanced_accuracy": balanced_accuracy,
-        "sensitivity": sensitivity,
-        "specificity": specificity,
+        "y_pred": y_pred_test,
+        # CV metrics (mean and std)
+        "cost_average": mean_metrics["cost_average"],
+        "cost_average_std": std_metrics["cost_average"],
+        # CV-based cost components (normalized per prediction)
+        "tn_avg_cost": mean_metrics["tn_avg_cost"],
+        "fp_avg_cost": mean_metrics["fp_avg_cost"],
+        "fn_avg_cost": mean_metrics["fn_avg_cost"],
+        "tp_avg_cost": mean_metrics["tp_avg_cost"],
+        "accuracy": mean_metrics["accuracy"],
+        "accuracy_std": std_metrics["accuracy"],
+        "balanced_accuracy": mean_metrics["balanced_accuracy"],
+        "balanced_accuracy_std": std_metrics["balanced_accuracy"],
+        "sensitivity": mean_metrics["sensitivity"],
+        "sensitivity_std": std_metrics["sensitivity"],
+        "specificity": mean_metrics["specificity"],
+        "specificity_std": std_metrics["specificity"],
+        "precision": mean_metrics["precision"],
+        "precision_std": std_metrics["precision"],
+        "f1_score": mean_metrics["f1_score"],
+        "f1_score_std": std_metrics["f1_score"],
+        # Test set metrics for confusion matrices
+        "cost_total": test_cost_metrics["total_cost"],
+        "test_cost_average": test_cost_metrics["average_cost"],
+        "tn_count": int(mean_metrics["tn_count"]),
+        "fp_count": int(mean_metrics["fp_count"]),
+        "fn_count": int(mean_metrics["fn_count"]),
+        "tp_count": int(mean_metrics["tp_count"]),
+        "tn_total_cost": test_cost_metrics["tn_total_cost"],
+        "fp_total_cost": test_cost_metrics["fp_total_cost"],
+        "fn_total_cost": test_cost_metrics["fn_total_cost"],
+        "tp_total_cost": test_cost_metrics["tp_total_cost"],
     }
 
 
@@ -134,48 +233,56 @@ def plot_cost_vs_undersampling(
     results_dir: Path,
     cost_matrix: dict,
     colors: dict[str, str],
+    time_unit: str = "hours",
 ) -> tuple[Path, Path]:
-    """Create comprehensive plots of cost vs undersampling fraction."""
+    """Create comprehensive plots of cost vs undersampling fraction.
+    
+    Parameters:
+    -----------
+    time_unit : str
+        Unit for time (e.g., 'hours', 'days') to display in plot labels
+    """
     
     fractions = [r["undersample_fraction"] for r in results]
-    total_costs = [r["cost_total"] for r in results]
     avg_costs = [r["cost_average"] for r in results]
+    avg_costs_std = [r["cost_average_std"] for r in results]
     
-    # Extract confusion matrix components
-    fp_costs = [r["fp_total_cost"] for r in results]
-    fn_costs = [r["fn_total_cost"] for r in results]
-    tp_costs = [r["tp_total_cost"] for r in results]
-    tn_costs = [r["tn_total_cost"] for r in results]
+    # Extract CV-based cost components (already normalized per prediction)
+    fp_avg_costs = [r["fp_avg_cost"] for r in results]
+    fn_avg_costs = [r["fn_avg_cost"] for r in results]
+    tp_avg_costs = [r["tp_avg_cost"] for r in results]
+    tn_avg_costs = [r["tn_avg_cost"] for r in results]
     
     # ============================================================================
-    # MAIN FIGURE: Total Cost and Cost Component Breakdown (stacked vertically)
+    # MAIN FIGURE: Average Cost and Cost Component Breakdown (stacked vertically)
     # ============================================================================
     fig, axes = plt.subplots(2, 1, figsize=(10, 10))
-    fig.suptitle("Undersampling Fraction vs Prediction Cost Analysis", fontsize=16, fontweight="bold")
+    fig.suptitle("Undersampling Fraction vs Prediction Cost Analysis (5-Fold CV)", fontsize=16, fontweight="bold")
     
-    # Plot 1: Total Cost
+    # Plot 1: Average Cost with error bars
     ax1 = axes[0]
-    ax1.plot(fractions, total_costs, marker="o", linewidth=2, markersize=6, color="#2E86AB")
+    ax1.errorbar(fractions, avg_costs, yerr=avg_costs_std, marker="o", linewidth=2, 
+                 markersize=6, color="#2E86AB", capsize=5, capthick=2, alpha=0.8)
     ax1.set_xlabel("Undersampling Fraction, Majority:Minority (x:1)", fontsize=11)
-    ax1.set_ylabel("Total Cost", fontsize=11)
-    ax1.set_title("Total Cost vs Undersampling Fraction", fontsize=12, fontweight="bold")
+    ax1.set_ylabel(f"Average Cost per Prediction ({time_unit})", fontsize=11)
+    ax1.set_title(f"Average Cost vs Undersampling Fraction ({time_unit})", fontsize=12, fontweight="bold")
     ax1.grid(True, alpha=0.3)
     
     # Mark minimum
-    min_idx = np.argmin(total_costs)
-    ax1.scatter([fractions[min_idx]], [total_costs[min_idx]], 
+    min_idx = np.argmin(avg_costs)
+    ax1.scatter([fractions[min_idx]], [avg_costs[min_idx]], 
                 color="red", s=100, zorder=5, label=f"Min: {fractions[min_idx]:.1f}")
     ax1.legend()
     
-    # Plot 2: Cost Components Breakdown (Stacked Area)
+    # Plot 2: Cost Components Breakdown (Stacked Area) - Average per prediction
     ax2 = axes[1]
-    ax2.stackplot(fractions, tn_costs, fp_costs, fn_costs, tp_costs,
-                  labels=["TN Cost", "FP Cost", "FN Cost", "TP Cost"],
+    ax2.stackplot(fractions, tn_avg_costs, fp_avg_costs, fn_avg_costs, tp_avg_costs,
+                  labels=["True Regular Cost", "False Collapse Cost", "False Regular Cost", "True Collapse Cost"],
                   colors=[colors['tn_color'], colors['fp_color'], colors['fn_color'], colors['tp_color']],
                   alpha=0.8)
     ax2.set_xlabel("Undersampling Fraction, Majority:Minority (x:1)", fontsize=11)
-    ax2.set_ylabel("Cost Components", fontsize=11)
-    ax2.set_title("Cost Component Breakdown", fontsize=12, fontweight="bold")
+    ax2.set_ylabel(f"Average Cost Components per Prediction ({time_unit})", fontsize=11)
+    ax2.set_title(f"Cost Component Breakdown ({time_unit})", fontsize=12, fontweight="bold")
     ax2.legend(loc="upper right", fontsize=9)
     ax2.grid(True, alpha=0.3)
     
@@ -207,19 +314,19 @@ def plot_cost_vs_undersampling(
     
     # Plot FP, FN, TP on left axis
     line_fp = ax_left.plot(fractions, fp_counts, marker="s", linewidth=2, markersize=6, 
-                            label="False Positives", color=fp_color)
+                            label="False Collapse", color=fp_color)
     line_fn = ax_left.plot(fractions, fn_counts, marker="^", linewidth=2, markersize=6,
-                            label="False Negatives", color=fn_color)
+                            label="False Regular", color=fn_color)
     line_tp = ax_left.plot(fractions, tp_counts, marker="d", linewidth=2, markersize=6,
-                            label="True Positives", color=tp_color)
+                            label="True Collapse", color=tp_color)
     
     # Plot TN on right axis
     line_tn = ax_right.plot(fractions, tn_counts, marker="o", linewidth=2, markersize=6, 
-                             label="True Negatives", color=tn_color)
+                             label="True Regular", color=tn_color)
     
     # Configure left axis
     ax_left.set_xlabel("Undersampling Fraction, Majority:Minority (x:1)", fontsize=12)
-    ax_left.set_ylabel("Count (FP, FN, TP)", fontsize=12, color="black")
+    ax_left.set_ylabel("Count (FC, FR, TC)", fontsize=12, color="black")
     ax_left.tick_params(axis='y', labelcolor="black")
     ax_left.grid(True, alpha=0.3)
     
@@ -229,7 +336,7 @@ def plot_cost_vs_undersampling(
     ax_left.set_ylim(-left_margin, left_max * 2.5)
     
     # Configure right axis
-    ax_right.set_ylabel("Count (TN)", fontsize=12, color=tn_color)
+    ax_right.set_ylabel("Count (TR)", fontsize=12, color=tn_color)
     ax_right.tick_params(axis='y', labelcolor=tn_color)
     
     # Set right axis limits: min value at ~40% from bottom, add small margin at top only
@@ -265,8 +372,15 @@ def plot_accuracy_metrics(
     
     fractions = [r["undersample_fraction"] for r in results]
     accuracies = [r["accuracy"] for r in results]
+    accuracies_std = [r["accuracy_std"] for r in results]
     balanced_accuracies = [r["balanced_accuracy"] for r in results]
+    balanced_accuracies_std = [r["balanced_accuracy_std"] for r in results]
     sensitivities = [r["sensitivity"] for r in results]
+    sensitivities_std = [r["sensitivity_std"] for r in results]
+    precisions = [r["precision"] for r in results]
+    precisions_std = [r["precision_std"] for r in results]
+    f1_scores = [r["f1_score"] for r in results]
+    f1_scores_std = [r["f1_score_std"] for r in results]
     
     # Find minimum cost point
     costs = [r["cost_average"] for r in results]
@@ -276,18 +390,24 @@ def plot_accuracy_metrics(
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(10, 6))
     
-    # Plot metrics
-    ax.plot(fractions, accuracies, linewidth=2, 
-            label="Accuracy", color="#2E86AB")
-    ax.plot(fractions, balanced_accuracies, linewidth=2,
-            label="Balanced Accuracy", color="#A23B72")
-    ax.plot(fractions, sensitivities, linewidth=2,
-            label="Recall", color="#F18F01")
+    # Plot metrics with error bars
+    ax.errorbar(fractions, accuracies, yerr=accuracies_std, linewidth=2, 
+            label="Accuracy", color="#2E86AB", alpha=0.7, capsize=3)
+    ax.errorbar(fractions, balanced_accuracies, yerr=balanced_accuracies_std, linewidth=2,
+            label="Balanced Accuracy", color="#A23B72", alpha=0.7, capsize=3)
+    ax.errorbar(fractions, sensitivities, yerr=sensitivities_std, linewidth=2,
+            label="Recall", color="#F18F01", alpha=0.7, capsize=3)
+    ax.errorbar(fractions, precisions, yerr=precisions_std, linewidth=2,
+            label="Precision", color="#C73E1D", alpha=0.7, capsize=3)
+    ax.errorbar(fractions, f1_scores, yerr=f1_scores_std, linewidth=2,
+            label="F1-Score", color="#6A994E", alpha=0.7, capsize=3)
     
     # Mark maximum points for each metric
     max_acc_idx = np.argmax(accuracies)
     max_bal_acc_idx = np.argmax(balanced_accuracies)
     max_sens_idx = np.argmax(sensitivities)
+    max_prec_idx = np.argmax(precisions)
+    max_f1_idx = np.argmax(f1_scores)
     
     ax.scatter([fractions[max_acc_idx]], [accuracies[max_acc_idx]], 
               color="#2E86AB", s=100, zorder=5, marker="*", edgecolors="black", linewidths=1.5)
@@ -295,6 +415,10 @@ def plot_accuracy_metrics(
               color="#A23B72", s=100, zorder=5, marker="*", edgecolors="black", linewidths=1.5)
     ax.scatter([fractions[max_sens_idx]], [sensitivities[max_sens_idx]], 
               color="#F18F01", s=100, zorder=5, marker="*", edgecolors="black", linewidths=1.5)
+    ax.scatter([fractions[max_prec_idx]], [precisions[max_prec_idx]], 
+              color="#C73E1D", s=100, zorder=5, marker="*", edgecolors="black", linewidths=1.5)
+    ax.scatter([fractions[max_f1_idx]], [f1_scores[max_f1_idx]], 
+              color="#6A994E", s=100, zorder=5, marker="*", edgecolors="black", linewidths=1.5)
     
     # Add vertical line at minimum cost
     ax.axvline(x=min_cost_fraction, color="red", linestyle="--", alpha=0.5, linewidth=1.5,
@@ -311,9 +435,9 @@ def plot_accuracy_metrics(
     
     ax.set_xlabel("Undersampling Fraction, Majority:Minority (x:1)", fontsize=12)
     ax.set_ylabel("Metric Value", fontsize=12)
-    ax.set_title("Accuracy Metrics vs Undersampling Fraction", fontsize=14, fontweight="bold")
+    ax.set_title("Accuracy Metrics vs Undersampling Fraction (5-Fold CV)", fontsize=14, fontweight="bold")
     ax.set_ylim(0, 1.05)
-    ax.legend(handles=handles, fontsize=10, loc="best")
+    ax.legend(handles=handles, fontsize=10, loc="lower center", ncol=7, bbox_to_anchor=(0.5, -0.20))
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -360,19 +484,19 @@ def save_confusion_matrices(
         y_pred = result["y_pred"]
         
         # Create confusion matrix plot
+        # Note: The function now uses normalize='all' for display values (percentages)
+        # and normalize='true' for color opacity, regardless of the normalize parameter
         fig = plot_tbm_confusion_matrix(
             y_test, 
             y_pred, 
             class_mapping, 
-            normalize="true", 
             show_percentages=True,
             cell_colors=cell_colors
         )
         
-        # Add title with cost information
+        # Add title with undersampling fraction only
         fig.suptitle(
-            f"Undersampling Fraction: {fraction:.1f}:1\n"
-            f"Total Cost: {result['cost_total']:.2f} | Avg Cost: {result['cost_average']:.4f}",
+            f"Undersampling Fraction: {fraction:.1f}:1",
             fontsize=12,
             fontweight="bold",
             y=1.05,
@@ -441,6 +565,7 @@ def main(cfg: DictConfig) -> None:
         "fp_cost": pcfg.experiment.cost_matrix.fp_cost,
         "fn_cost": pcfg.experiment.cost_matrix.fn_cost,
         "tp_cost": pcfg.experiment.cost_matrix.tp_cost,
+        "time_per_regular_advance": pcfg.experiment.cost_matrix.time_per_regular_advance,
     }
     
     # Prepare color configuration
@@ -467,9 +592,9 @@ def main(cfg: DictConfig) -> None:
     console.print(f"[bold yellow]Testing {len(undersampling_fractions)} undersampling fractions[/bold yellow]")
     console.print(f"  Range: {min_fraction:.1f}:1 to {max_fraction:.1f}:1\n")
     
-    # Run grid search
+    # Run grid search with CV
     results = []
-    for fraction in track(undersampling_fractions, description="Running grid search..."):
+    for fraction in track(undersampling_fractions, description="Running grid search with 5-fold CV..."):
         result = analyze_undersampling_fraction(
             undersample_fraction=fraction,
             model_name=pcfg.model.name,
@@ -482,6 +607,7 @@ def main(cfg: DictConfig) -> None:
             cost_matrix=cost_matrix,
             class_mapping=pcfg.experiment.tbm_classification,
             random_seed=pcfg.experiment.seed,
+            cv_folds=pcfg.optuna.cv_folds,
     )
         results.append(result)
     
@@ -495,10 +621,10 @@ def main(cfg: DictConfig) -> None:
     table = Table(title="Top 5 Undersampling Configurations by Average Cost")
     table.add_column("Rank", style="cyan", justify="center")
     table.add_column("Fraction", style="magenta")
-    table.add_column("Avg Cost", style="green")
-    table.add_column("Total Cost", style="yellow")
-    table.add_column("FP", style="red")
-    table.add_column("FN", style="red")
+    table.add_column("Avg Cost (hrs)", style="green")
+    table.add_column("Total Cost (hrs)", style="yellow")
+    table.add_column("FC", style="red")
+    table.add_column("FR", style="red")
     
     sorted_results = sorted(results, key=lambda x: x["cost_average"])
     for i, result in enumerate(sorted_results, 1):
@@ -514,12 +640,12 @@ def main(cfg: DictConfig) -> None:
     console.print(table)
     
     console.print(f"\n[bold green]🎯 Optimal Undersampling Fraction:[/bold green] {optimal_result['undersample_fraction']:.1f}:1")
-    console.print(f"   Average Cost: {optimal_result['cost_average']:.4f}")
-    console.print(f"   Total Cost: {optimal_result['cost_total']:.2f}\n")
+    console.print(f"   Average Cost: {optimal_result['cost_average']:.4f} hours")
+    console.print(f"   Total Cost: {optimal_result['cost_total']:.2f} hours\n")
     
     # Generate plots
     console.print("[bold blue]📊 Generating plots...[/bold blue]")
-    main_plot_path, error_plot_path = plot_cost_vs_undersampling(results, results_dir, cost_matrix, colors)
+    main_plot_path, error_plot_path = plot_cost_vs_undersampling(results, results_dir, cost_matrix, colors, time_unit="hours")
     console.print(f"  Saved: {main_plot_path}")
     console.print(f"  Saved: {error_plot_path}")
     

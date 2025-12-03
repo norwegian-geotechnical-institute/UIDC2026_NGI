@@ -10,8 +10,8 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 
 ```
 ├── scripts/                          # Main execution scripts
-│   ├── batch_optimise.py            # Batch hyperparameter optimization for multiple models
-│   ├── optimise_hyperparameters.py  # Single model hyperparameter optimization
+│   ├── batch_optimize.py            # Batch hyperparameter optimization for multiple models
+│   ├── optimize_hyperparameters.py  # Single model hyperparameter optimization
 │   ├── train.py                     # Model training with best hyperparameters
 │   ├── preprocess.py                # Data preprocessing pipeline
 │   ├── select_features.py           # Feature selection utilities
@@ -19,7 +19,7 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 │   └── config/                      # Hydra configuration files
 │       └── main.yaml                # Main configuration (CV folds, sampling, MLflow)
 ├── src/tbm_ml/                      # Core ML library
-│   ├── hyperparameter_optimisation.py  # Optuna-based hyperparameter search
+│   ├── hyperparameter_optimization.py  # Optuna-based hyperparameter search
 │   ├── train_eval_funcs.py          # Training pipelines and evaluation
 │   ├── preprocess_funcs.py          # Data preprocessing functions
 │   ├── plotting.py                  # Visualization utilities
@@ -107,13 +107,13 @@ Processes raw TBM data, handles outliers, and creates train/test splits.
 #### Single Model
 
 ```bash
-python scripts/optimise_hyperparameters.py model_name=xgboost
+python scripts/optimize_hyperparameters.py model_name=xgboost
 ```
 
 #### Batch Optimization (Multiple Models)
 
 ```bash
-python scripts/batch_optimise.py
+python scripts/batch_optimize.py
 ```
 
 Runs optimization for all configured models sequentially.
@@ -162,7 +162,7 @@ mlflow:
 
 ## Models Configuration
 
-Edit `scripts/batch_optimise.py` to select models:
+Edit `scripts/batch_optimize.py` to select models:
 
 ```python
 MODELS = [

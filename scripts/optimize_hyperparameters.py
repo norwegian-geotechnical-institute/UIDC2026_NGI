@@ -46,6 +46,15 @@ def main(cfg: DictConfig) -> None:
         f"Using {pcfg.optuna.cv_folds}-fold cross-validation for hyperparameter optimization"
     )
 
+    # Prepare cost matrix for optimization
+    cost_matrix = {
+        "tn_cost": pcfg.experiment.cost_matrix.tn_cost,
+        "fp_cost": pcfg.experiment.cost_matrix.fp_cost,
+        "fn_cost": pcfg.experiment.cost_matrix.fn_cost,
+        "tp_cost": pcfg.experiment.cost_matrix.tp_cost,
+        "time_per_regular_advance": pcfg.experiment.cost_matrix.time_per_regular_advance,
+    }
+
     # Run optimization with cross-validation and MLflow logging
     study = run_optimization(
         model_name=pcfg.model.name,
@@ -54,6 +63,7 @@ def main(cfg: DictConfig) -> None:
         oversample_level=pcfg.experiment.oversample_level,
         undersample_level=pcfg.experiment.undersample_level,
         undersample_ratio=pcfg.experiment.undersample_ratio,
+        cost_matrix=cost_matrix,
         n_trials=pcfg.optuna.n_trials,
         cv_folds=pcfg.optuna.cv_folds,
         mlflow_path=Path(pcfg.mlflow.path),

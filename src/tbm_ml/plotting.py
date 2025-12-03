@@ -70,10 +70,10 @@ def pairplot(
             
             # Set y-axis label for leftmost column
             if j == 0:
-                ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=8)
+                ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=10)
             
-            ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=8)
-            ax.tick_params(axis="both", labelsize=8)
+            ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=10)
+            ax.tick_params(axis="both", labelsize=9)
 
     return fig
 
@@ -366,6 +366,7 @@ def plot_tbm_confusion_matrix(
     cell_colors : dict[str, str], optional
         Dictionary with keys 'tn_color', 'fp_color', 'fn_color', 'tp_color'
         to specify custom colors for each cell. If provided, overrides cmap.
+        Maps to: TR (True Regular), FC (False Collapse), FR (False Regular), TC (True Collapse)
         Example: {'tn_color': '#90EE90', 'fp_color': '#FFD700', 'fn_color': '#FF6B6B', 'tp_color': '#4ECDC4'}
 
     Returns:
@@ -379,15 +380,13 @@ def plot_tbm_confusion_matrix(
     >>> fig = plot_tbm_confusion_matrix(y_test, y_pred, class_mapping, "RandomForest")
     """
 
-    # Calculate confusion matrix
-    cm = confusion_matrix(y_true, y_pred, normalize=normalize)
-
-    # Convert to percentages if normalized
-    if normalize is not None:
-        cm_display = np.round(cm * 100, 1)  # Round to 1 decimal place for percentages
-    else:
-        cm_display = cm.astype(int)
-
+    # Calculate confusion matrix for display values (normalized to 'all' for percentages)
+    cm_display_values = confusion_matrix(y_true, y_pred, normalize='all')
+    cm_display = np.round(cm_display_values * 100, 1)  # Round to 1 decimal place for percentages
+    
+    # Calculate confusion matrix for color opacity (normalized by true labels)
+    cm_for_colors = confusion_matrix(y_true, y_pred, normalize='true')
+    
     # Create figure and axis
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -401,12 +400,8 @@ def plot_tbm_confusion_matrix(
         ])
         
         # Normalize values to determine opacity (0-1 range)
-        if normalize is not None:
-            # For percentage display, use percentage values for opacity
-            opacity_values = cm_display / 100.0
-        else:
-            # For count display, normalize by max value
-            opacity_values = cm_display / cm_display.max()
+        # Use 'true' normalization for colors (each row sums to 1)
+        opacity_values = cm_for_colors
         
         # Display each cell with its specific color and opacity
         for i in range(cm_display.shape[0]):
@@ -426,7 +421,9 @@ def plot_tbm_confusion_matrix(
         ax.set_ylim(cm_display.shape[0] - 0.5, -0.5)
     else:
         # Display confusion matrix as image with colormap
-        im = ax.imshow(cm_display, interpolation="nearest", cmap=getattr(plt.cm, cmap))
+        # Use 'true' normalization for colors
+        cm_for_colormap = confusion_matrix(y_true, y_pred, normalize='true')
+        im = ax.imshow(cm_for_colormap, interpolation="nearest", cmap=getattr(plt.cm, cmap))
         # Add colorbar
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
@@ -452,24 +449,20 @@ def plot_tbm_confusion_matrix(
         for i in range(cm_display.shape[0]):
             for j in range(cm_display.shape[1]):
                 value = cm_display[i, j]
-
-                # Choose text color based on cell opacity/value
+                
+                # Choose text color based on cell opacity/value (using 'true' normalization for consistency)
                 # For custom colors, base on normalized value; for colormap, use original logic
                 if cell_colors is not None:
-                    if normalize is not None:
-                        # Use percentage value to determine text color
-                        text_color = "white" if value > 50 else "black"
-                    else:
-                        # Use normalized count
-                        text_color = "white" if value > (cm_display.max() / 2) else "black"
+                    # Use 'true' normalization for text color decision
+                    opacity = cm_for_colors[i, j]
+                    text_color = "white" if opacity > 0.5 else "black"
                 else:
-                    text_color = "white" if value > (cm_display.max() / 2) else "black"
+                    # Use 'true' normalization for colormap
+                    opacity = cm_for_colors[i, j]
+                    text_color = "white" if opacity > 0.5 else "black"
 
-                # Format text based on whether values are percentages or counts
-                if normalize is not None:
-                    text = f"({value:.1f}%)"
-                else:
-                    text = f"{int(value)}"
+                # Format text - always show percentages normalized to 'all'
+                text = f"({value:.1f}%)"
 
                 ax.text(j, i, text, ha="center", va="center", color=text_color)
 

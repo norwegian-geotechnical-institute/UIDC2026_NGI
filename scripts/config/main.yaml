@@ -15,10 +15,9 @@ hydra:
 
 experiment:
   save_model: False
-  seed: 421
+  seed: 3
   train_fraction: 0.75
-  features:
-    [
+  features: [
       "T(P,V/N)-b1",
       "T(P,V/N)-b2",
       "T(P,V/N)-a",
@@ -64,16 +63,16 @@ experiment:
       "T/P-max",
       "T/P-m",
       "T/P-std",
-      "Tpi-min",
-      "Tpi-max",
-      "Tpi-m",
-      "Tpi-std",
-      "Fpi-min",
-      "Fpi-max",
-      "Fpi-m",
-      "Fpi-std",
-      "Tpi-slope",
-      "Tpi-R2:1-sse/sst",
+      # "Tpi-min",
+      # "Tpi-max",
+      # "Tpi-m",
+      # "Tpi-std",
+      # "Fpi-min",
+      # "Fpi-max",
+      # "Fpi-m",
+      # "Fpi-std",
+      # "Tpi-slope",
+      # "Tpi-R2:1-sse/sst",
       "WT/WP-slope",
       "WT/WP-R2:1-sse/sst",
       "T(P*V/N)-slope",
@@ -83,8 +82,8 @@ experiment:
       "P*V/N",
       "T/P",
       # "Tpi",
-      "dt",
-      "dz",
+      # "dt",
+      # "dz",
       "workP",
       "workT",
       "Total T",
@@ -95,26 +94,28 @@ experiment:
     ]
   site_info: []
   label: "collapse"
-  undersample_level: 2000
+  undersample_level: null  # Set to absolute number to override ratio, or null to use ratio
+  undersample_ratio: 1.0  # Ratio of majority:minority (1.0 = 1:1 ratio, 2.0 = 2:1, etc.)
   oversample_level: 0
   tbm_classification:
     0: regular
     1: collapse
   cost_matrix:
-    # Cost values in time units (e.g., hours)
-    # These represent the cost/impact of each prediction outcome
-    tn_cost: 1.0 # True Negative: Correctly predicted regular excavation (no cost)
-    fp_cost: 10.0 # False Positive: False alarm - predicted collapse but was regular (investigation time, delays)
-    fn_cost: 240.0 # False Negative: Missed collapse - predicted regular but was collapse (equipment damage, safety risk, major delays)
-    tp_cost: 10.0 # True Positive: Correctly predicted collapse (no cost, or could add if there's a response cost)
+    # Cost values normalized to time per regular advance
+    # These represent the cost/impact of each prediction outcome as a multiple of regular advance time
+    tn_cost: 1.0 # True Regular (TR): Correctly predicted regular excavation (1x regular advance time)
+    fp_cost: 10.0 # False Collapse (FC): False alarm - predicted collapse but was regular (investigation time, delays)
+    fn_cost: 240.0 # False Regular (FR): Missed collapse - predicted regular but was collapse (equipment damage, safety risk, major delays)
+    tp_cost: 10.0 # True Collapse (TC): Correctly predicted collapse (response and investigation cost)
+    time_per_regular_advance: 1.0 # Time in hours for a regular advance (multiplier to convert to absolute time)
 
   # Color scheme for confusion matrix and analysis plots
-  # Colors correspond to: TN (True Negative), FP (False Positive), FN (False Negative), TP (True Positive)
+  # Colors correspond to: TR (True Regular), FC (False Collapse), FR (False Regular), TC (True Collapse)
   confusion_matrix_colors:
-    tn_color: "#90EE90" # Light green
-    fp_color: "#FFD700" # Gold/Yellow
-    fn_color: "#FF6B6B" # Red
-    tp_color: "#4ECDC4" # Teal/Cyan
+    tn_color: "#76B644" # True Regular (TR) - Light green
+    fp_color: "#FCB518" # False Collapse (FC) - Gold/Yellow
+    fn_color: "#EF4927" # False Regular (FR) - Red
+    tp_color: "#1B9AD7" # True Collapse (TC) - Teal/Cyan
 
 preprocess:
   outlier_feature: ""

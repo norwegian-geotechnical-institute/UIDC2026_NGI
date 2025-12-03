@@ -1,11 +1,11 @@
 name: xgboost
 params:
-  n_estimators: 100
-  max_depth: 6
-  learning_rate: 0.3
-  subsample: 1.0
-  colsample_bytree: 1.0
-  reg_alpha: 0
-  reg_lambda: 1
+  n_estimators: 179
+  max_depth: 8
+  learning_rate: 0.1336674424474196
+  subsample: 0.7282263389921348
+  colsample_bytree: 0.8896012201308952
+  reg_alpha: 0.07919227245102388
+  reg_lambda: 0.36469616999655735
   random_state: 42
   n_jobs: -1

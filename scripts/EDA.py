@@ -121,6 +121,25 @@ def main(cfg: DictConfig) -> None:
     
     console.print(table)
     console.print()
+    
+    # Generate profile report
+    console.print("[bold green]Generating profile report...[/bold green]")
+    from pathlib import Path
+    try:
+        from ydata_profiling import ProfileReport
+        
+        report_dir = Path("analyses/profile_report")
+        report_dir.mkdir(parents=True, exist_ok=True)
+        
+        profile = ProfileReport(df, title="TBM Tunnel Data Profile Report", explorative=True)
+        report_path = report_dir / "tbm_data_profile_report.html"
+        profile.to_file(report_path)
+        
+        console.print(f"[bold green]Profile report saved to: {report_path}[/bold green]")
+    except ImportError as e:
+        console.print(f"[bold yellow]Warning: Could not generate profile report. Error: {e}[/bold yellow]")
+        console.print("[bold yellow]Try installing setuptools: uv add setuptools[/bold yellow]")
+    console.print()
 
 
 if __name__ == "__main__":

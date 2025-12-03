@@ -43,6 +43,7 @@ def calculate_prediction_costs(
     fp_cost: float = 5.0,
     fn_cost: float = 100.0,
     tp_cost: float = 0.0,
+    time_per_regular_advance: float = 1.0,
 ) -> dict[str, float]:
     """
     Calculate the cost of predictions based on confusion matrix and cost values.
@@ -54,31 +55,33 @@ def calculate_prediction_costs(
     y_pred : pd.Series
         Predicted labels
     tn_cost : float
-        Cost for True Negatives (correctly predicted regular excavation)
+        Cost for True Regular (TR) - correctly predicted regular excavation
     fp_cost : float
-        Cost for False Positives (predicted collapse but was regular - false alarm)
+        Cost for False Collapse (FC) - predicted collapse but was regular (false alarm)
     fn_cost : float
-        Cost for False Negatives (predicted regular but was collapse - missed collapse)
+        Cost for False Regular (FR) - predicted regular but was collapse (missed collapse)
     tp_cost : float
-        Cost for True Positives (correctly predicted collapse)
+        Cost for True Collapse (TC) - correctly predicted collapse
+    time_per_regular_advance : float
+        Time in hours for a regular advance (multiplier to convert cost to time units)
     
     Returns:
     --------
     dict with cost metrics:
-        - total_cost: Sum of all prediction costs
-        - average_cost: Average cost per prediction
+        - total_cost: Sum of all prediction costs (in time units)
+        - average_cost: Average cost per prediction (in time units)
         - tn_count, fp_count, fn_count, tp_count: Confusion matrix counts
-        - tn_total_cost, fp_total_cost, fn_total_cost, tp_total_cost: Individual cost components
+        - tn_total_cost, fp_total_cost, fn_total_cost, tp_total_cost: Individual cost components (in time units)
     """
     # Get confusion matrix
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel()
     
     # Calculate individual cost components
-    tn_total_cost = tn * tn_cost
-    fp_total_cost = fp * fp_cost
-    fn_total_cost = fn * fn_cost
-    tp_total_cost = tp * tp_cost
+    tn_total_cost = tn * tn_cost * time_per_regular_advance
+    fp_total_cost = fp * fp_cost * time_per_regular_advance
+    fn_total_cost = fn * fn_cost * time_per_regular_advance
+    tp_total_cost = tp * tp_cost * time_per_regular_advance
     
     # Calculate total and average cost
     total_cost = tn_total_cost + fp_total_cost + fn_total_cost + tp_total_cost
@@ -136,6 +139,7 @@ def calculate_expected_cost(
         fp_cost=cost_matrix["fp_cost"],
         fn_cost=cost_matrix["fn_cost"],
         tp_cost=cost_matrix["tp_cost"],
+        time_per_regular_advance=cost_matrix.get("time_per_regular_advance", 1.0),
     )
     return costs["average_cost"]
 
@@ -235,11 +239,19 @@ def train_predict(
     X_test: pd.DataFrame,
     y_train: pd.Series,
     y_test: pd.Series,
-    undersample_level: int,
-    oversample_level: int,
+    undersample_level: int | None = None,
+    undersample_ratio: float | None = None,
+    oversample_level: int = 0,
     save_model: bool = False,
     random_seed: int = 42,
 ) -> Pipeline:
+    # Calculate undersample_level from ratio if not explicitly provided
+    if undersample_level is None and undersample_ratio is not None:
+        minority_count = int(y_train.value_counts().min())
+        undersample_level = int(minority_count * undersample_ratio)
+    elif undersample_level is None:
+        # Default: no undersampling
+        undersample_level = int(y_train.value_counts().max())
 
     undersample_dict = {
         cls: undersample_level
@@ -277,6 +289,19 @@ def train_predict(
         case "svm":
             classifier = SVClassifier(**model_params)
         case "gaussian_process":
+            # Special handling for Gaussian Process: reconstruct kernel from parameters
+            if "gp_length_scale" in model_params:
+                from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel as C
+                
+                # Extract kernel parameters
+                length_scale = model_params.pop("gp_length_scale")
+                noise_level = model_params.pop("gp_noise_level")
+                constant_value = model_params.pop("gp_constant_value")
+                
+                # Build kernel
+                kernel = C(constant_value, (1e-3, 1e3)) * RBF(length_scale, (1e-2, 1e2)) + WhiteKernel(noise_level, (1e-10, 1e1))
+                model_params["kernel"] = kernel
+            
             classifier = GaussianProcessClassifier(**model_params)
         case _:
             raise NotImplementedError(f"Model {model_name} is not implemented yet.")
@@ -340,6 +365,7 @@ def evaluate_model(
             fp_cost=cost_matrix["fp_cost"],
             fn_cost=cost_matrix["fn_cost"],
             tp_cost=cost_matrix["tp_cost"],
+            time_per_regular_advance=cost_matrix.get("time_per_regular_advance", 1.0),
         )
         
         # Add cost metrics to the metrics dictionary with 'cost_' prefix
@@ -361,14 +387,14 @@ def evaluate_model(
         pprint(f"Total Cost: {cost_metrics['total_cost']:.2f}")
         pprint(f"Average Cost per Prediction: {cost_metrics['average_cost']:.4f}")
         pprint("\nCost Breakdown:")
-        pprint(f"  TN: {cost_metrics['tn_count']} × {cost_matrix.get('tn_cost', 0.0)} = {cost_metrics['tn_total_cost']:.2f}")
-        pprint(f"  FP: {cost_metrics['fp_count']} × {cost_matrix.get('fp_cost', 5.0)} = {cost_metrics['fp_total_cost']:.2f}")
-        pprint(f"  FN: {cost_metrics['fn_count']} × {cost_matrix.get('fn_cost', 100.0)} = {cost_metrics['fn_total_cost']:.2f}")
-        pprint(f"  TP: {cost_metrics['tp_count']} × {cost_matrix.get('tp_cost', 0.0)} = {cost_metrics['tp_total_cost']:.2f}")
+        pprint(f"  TR (True Regular): {cost_metrics['tn_count']} × {cost_matrix.get('tn_cost', 0.0)} = {cost_metrics['tn_total_cost']:.2f}")
+        pprint(f"  FC (False Collapse): {cost_metrics['fp_count']} × {cost_matrix.get('fp_cost', 5.0)} = {cost_metrics['fp_total_cost']:.2f}")
+        pprint(f"  FR (False Regular): {cost_metrics['fn_count']} × {cost_matrix.get('fn_cost', 100.0)} = {cost_metrics['fn_total_cost']:.2f}")
+        pprint(f"  TC (True Collapse): {cost_metrics['tp_count']} × {cost_matrix.get('tp_cost', 0.0)} = {cost_metrics['tp_total_cost']:.2f}")
 
     # Plot confusion matrix using TBM-specific styling
     cm_fig = plot_tbm_confusion_matrix(
-        y_test, y_pred, class_mapping, normalize="true", show_percentages=True
+        y_test, y_pred, class_mapping, normalize="all", show_percentages=True
     )
     artifacts = {"confusion_matrix": cm_fig}
 

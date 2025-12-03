@@ -12,32 +12,35 @@ class ModelConfig(BaseModel):
 # Cost Matrix Configuration
 class CostMatrixConfig(BaseModel):
     tn_cost: float = Field(
-        0.0, description="Cost for True Negatives (correct regular prediction)"
+        0.0, description="Cost for True Regular (TR) - correct regular prediction"
     )
     fp_cost: float = Field(
-        5.0, description="Cost for False Positives (false alarm - predict collapse when regular)"
+        5.0, description="Cost for False Collapse (FC) - false alarm, predict collapse when regular"
     )
     fn_cost: float = Field(
-        100.0, description="Cost for False Negatives (missed collapse - predict regular when collapse)"
+        100.0, description="Cost for False Regular (FR) - missed collapse, predict regular when collapse"
     )
     tp_cost: float = Field(
-        0.0, description="Cost for True Positives (correct collapse prediction)"
+        0.0, description="Cost for True Collapse (TC) - correct collapse prediction"
+    )
+    time_per_regular_advance: float = Field(
+        1.0, description="Time in hours for a regular advance (multiplier to convert cost to time units)"
     )
 
 
 # Confusion Matrix Colors Configuration
 class ConfusionMatrixColorsConfig(BaseModel):
     tn_color: str = Field(
-        "#90EE90", description="Color for True Negatives (light green)"
+        "#90EE90", description="Color for True Regular (TR) - light green"
     )
     fp_color: str = Field(
-        "#FFD700", description="Color for False Positives (gold/yellow)"
+        "#FFD700", description="Color for False Collapse (FC) - gold/yellow"
     )
     fn_color: str = Field(
-        "#FF6B6B", description="Color for False Negatives (red)"
+        "#FF6B6B", description="Color for False Regular (FR) - red"
     )
     tp_color: str = Field(
-        "#4ECDC4", description="Color for True Positives (teal/cyan)"
+        "#4ECDC4", description="Color for True Collapse (TC) - teal/cyan"
     )
 
 
@@ -55,7 +58,8 @@ class ExperimentConfig(BaseModel):
     )
     site_info: list[str] = Field(..., description="List of site information fields")
     label: str = Field(..., description="Label for the dataset")
-    undersample_level: int = Field(..., description="Level for undersampling")
+    undersample_level: int | None = Field(None, description="Absolute level for undersampling (overrides undersample_ratio if set)")
+    undersample_ratio: float | None = Field(1.0, description="Ratio of majority:minority for undersampling (e.g., 1.0 = 1:1 ratio)")
     oversample_level: int = Field(..., description="Level for oversampling")
     tbm_classification: dict[int, str] = Field(
         ..., description="Soil classification dictionary"

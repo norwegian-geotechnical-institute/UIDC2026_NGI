@@ -20,10 +20,10 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold
 
-from tbm_ml.train_eval_funcs import xgb_native_pipeline, train_predict
+from tbm_ml.train_eval_funcs import xgb_native_pipeline, train_predict, calculate_prediction_costs
 
 
-def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, Any]:
+def get_hyperparameter_space(model_name: str, trial: optuna.Trial, random_seed: int = 42) -> dict[str, Any]:
     """Define hyperparameter search spaces for different models.
 
     Optimized for binary classification with limited data (~3000 samples).
@@ -34,7 +34,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
         return {
             "objective": "binary:logistic",
             "device": "cpu",  # More stable for small datasets
-            "random_state": 42,
+            "random_state": random_seed,
             # CRITICAL: Tree structure (most important)
             "max_depth": trial.suggest_int("max_depth", 3, 8),  # Reduced max depth
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
@@ -61,7 +61,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             # HIGH: Sampling
             "subsample": trial.suggest_float("subsample", 0.7, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
-            "random_state": 42,
+            "random_state": random_seed,
         }
 
     elif model_name == "random_forest":
@@ -82,7 +82,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             ),  # Removed None
             # LOW: Bootstrap (less critical with small data)
             "bootstrap": True,  # Fixed to True for stability
-            "random_state": 42,
+            "random_state": random_seed,
         }
 
     elif model_name == "extra_trees":
@@ -97,7 +97,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
             # MEDIUM: Bootstrap (Extra Trees can handle without bootstrap better)
             "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
-            "random_state": 42,
+            "random_state": random_seed,
         }
 
     elif model_name == "hist_gradient_boosting":
@@ -120,7 +120,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             "l2_regularization": trial.suggest_float("l2_regularization", 0.01, 1.0),
             # LOW: Binning (less critical for small data)
             "max_bins": 128,  # Fixed for consistency
-            "random_state": 42,
+            "random_state": random_seed,
         }
 
     elif model_name == "catboost":
@@ -133,7 +133,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 20),  # Increased min
             # MEDIUM: Other parameters
             "border_count": 128,  # Fixed for small datasets
-            "random_seed": 42,
+            "random_seed": random_seed,
             "verbose": False,
             "task_type": "CPU",
         }
@@ -157,7 +157,7 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
             "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
             "bagging_freq": trial.suggest_int("bagging_freq", 1, 5),  # Reduced max
-            "random_state": 42,
+            "random_state": random_seed,
             "verbose": -1,
         }
 
@@ -173,19 +173,27 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
             ),  # Simplified
             # HIGH: RBF kernel parameter (only if RBF selected)
             "gamma": trial.suggest_categorical("gamma", ["scale", "auto"]),
-            "random_state": 42,
+            "random_state": random_seed,
         }
 
     elif model_name == "logistic_regression":
+        # CRITICAL: Regularization strength
+        C = trial.suggest_float("C", 0.01, 10, log=True)
+        
+        # HIGH: Regularization type
+        penalty = trial.suggest_categorical("penalty", ["l1", "l2"])
+        
+        # Solver must match penalty type
+        # liblinear supports both l1 and l2
+        # Using suggest_categorical even with one option ensures it's stored in trial.params
+        solver = trial.suggest_categorical("solver", ["liblinear"])
+        
         return {
-            # CRITICAL: Regularization strength
-            "C": trial.suggest_float("C", 0.01, 10, log=True),  # Focused range
-            # HIGH: Regularization type
-            "penalty": trial.suggest_categorical("penalty", ["l1", "l2"]),  # Simplified
-            # MEDIUM: Solver (depends on penalty)
-            "solver": "liblinear",  # Fixed for stability with small data
-            "max_iter": 1000,  # Fixed sufficient value
-            "random_state": 42,
+            "C": C,
+            "penalty": penalty,
+            "solver": solver,
+            "max_iter": 1000,
+            "random_state": random_seed,
         }
 
     elif model_name == "knn":
@@ -204,23 +212,37 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial) -> dict[str, 
         }
 
     elif model_name == "gaussian_process":
-        # SIMPLIFIED: GP is computationally expensive and complex for hyperopt with small data
-        # Fix most parameters to reasonable defaults and tune only the most critical ones
+        # GP is computationally expensive, so we tune only the most critical parameters
+        # Note: We store kernel construction parameters in trial.params
+        # The kernel will be reconstructed in train_predict based on these params
+        
+        # CRITICAL: Kernel length scale controls how far apart points need to be to be considered independent
+        length_scale = trial.suggest_float("gp_length_scale", 0.1, 10.0, log=True)
+        
+        # HIGH: Noise level - controls how much noise to expect in the data
+        noise_level = trial.suggest_float("gp_noise_level", 1e-5, 1.0, log=True)
+        
+        # MEDIUM: Constant value multiplier for the kernel
+        constant_value = trial.suggest_float("gp_constant_value", 0.1, 10.0, log=True)
+        
+        # Number of restarts for the optimizer
+        n_restarts = trial.suggest_int("n_restarts_optimizer", 2, 10)
+        
+        # Return parameters that will be used to reconstruct the kernel
         return {
-            # MEDIUM: Optimizer (fixed to most robust option)
-            "optimizer": "fmin_l_bfgs_b",
-            "n_restarts_optimizer": 2,  # Fixed reasonable value
-            "max_iter_predict": 100,  # Fixed reasonable value
-            # LOW: Kernel choice (simplified, RBF is usually good)
-            "kernel": None,  # Use default RBF kernel
-            "random_state": 42,
+            "gp_length_scale": length_scale,
+            "gp_noise_level": noise_level,
+            "gp_constant_value": constant_value,
+            "n_restarts_optimizer": n_restarts,
+            "max_iter_predict": 100,
+            "random_state": random_seed,
         }
 
     else:
         raise ValueError(f"Hyperparameter space not defined for model: {model_name}")
 
 
-def create_objective_function(model_name: str, cv_folds: int = 5):
+def create_objective_function(model_name: str, cv_folds: int = 5, cost_matrix: dict | None = None, random_seed: int = 42):
     """Create an objective function for a specific model with cross-validation."""
 
     def objective(
@@ -235,20 +257,21 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
         console = Console()
 
         # Get hyperparameters for this model
-        model_params = get_hyperparameter_space(model_name, trial)
+        model_params = get_hyperparameter_space(model_name, trial, random_seed)
 
         console.print(f"\nModel: {model_name}")
         console.print(f"Trial {trial.number}: {pformat(trial.params)}")
 
         try:
             # Use stratified k-fold cross-validation
-            skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+            skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
             cv_metrics = {
                 "balanced_accuracy": [],
                 "accuracy": [],
                 "precision": [],
                 "recall": [],
                 "f1": [],
+                "average_cost": [],
             }
 
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
@@ -295,6 +318,21 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
                 cv_metrics["f1"].append(
                     f1_score(y_val_fold, y_pred_fold, zero_division=0)
                 )
+                
+                # Calculate cost if cost_matrix is provided
+                if cost_matrix is not None:
+                    cost_metrics = calculate_prediction_costs(
+                        y_val_fold,
+                        y_pred_fold,
+                        tn_cost=cost_matrix.get("tn_cost", 1.0),
+                        fp_cost=cost_matrix.get("fp_cost", 10.0),
+                        fn_cost=cost_matrix.get("fn_cost", 240.0),
+                        tp_cost=cost_matrix.get("tp_cost", 10.0),
+                        time_per_regular_advance=cost_matrix.get("time_per_regular_advance", 1.0),
+                    )
+                    cv_metrics["average_cost"].append(cost_metrics["average_cost"])
+                else:
+                    cv_metrics["average_cost"].append(0.0)
 
             # Calculate mean scores for all metrics
             mean_metrics = {
@@ -315,11 +353,13 @@ def create_objective_function(model_name: str, cv_folds: int = 5):
                 f"Accuracy: {mean_metrics['accuracy']:.4f}, "
                 f"Precision: {mean_metrics['precision']:.4f}, "
                 f"Recall: {mean_metrics['recall']:.4f}, "
-                f"F1: {mean_metrics['f1']:.4f}"
+                f"F1: {mean_metrics['f1']:.4f}, "
+                f"Avg Cost: {mean_metrics['average_cost']:.4f} "
+                f"(+/- {std_metrics['average_cost']:.4f})"
             )
 
-            # Return balanced accuracy as the optimization target
-            return mean_metrics["balanced_accuracy"]
+            # Return average cost as the optimization target (minimize)
+            return mean_metrics["average_cost"]
 
         except Exception as e:
             console.print(f"[red]Error in trial {trial.number}: {str(e)}[/red]")
@@ -336,23 +376,25 @@ def run_optimization(
     oversample_level: int,
     undersample_level: int | None = None,
     undersample_ratio: float | None = None,
+    cost_matrix: dict | None = None,
     n_trials: int = 100,
     cv_folds: int = 5,
     study_name: str = None,
     mlflow_path: Path = None,
     experiment_name: str = None,
     log_to_mlflow: bool = False,
+    random_seed: int = 42,
 ) -> Any:
 
     if study_name is None:
         study_name = f"{model_name}_hyperparameter_optimization"
 
     # Create objective function for this model
-    objective_func = create_objective_function(model_name, cv_folds)
+    objective_func = create_objective_function(model_name, cv_folds, cost_matrix, random_seed)
 
-    sampler = optuna.samplers.TPESampler()
+    sampler = optuna.samplers.TPESampler(seed=random_seed)
     study = optuna.create_study(
-        direction="maximize", study_name=study_name, sampler=sampler
+        direction="minimize", study_name=study_name, sampler=sampler
     )
 
     # Track optimization time
