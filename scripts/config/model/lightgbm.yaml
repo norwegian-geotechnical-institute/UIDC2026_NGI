@@ -1,14 +1,14 @@
 name: lightgbm
 params:
-  boosting_type: gbdt
-  objective: binary
-  metric: binary_logloss
-  num_leaves: 31
-  learning_rate: 0.05
-  feature_fraction: 0.9
-  bagging_fraction: 0.8
-  bagging_freq: 5
-  verbose: 0
+  bagging_fraction: 0.8677126844571269
+  bagging_freq: 1
+  feature_fraction: 0.7937635704745494
+  learning_rate: 0.02002821098423169
+  min_child_samples: 43
+  n_estimators: 265
+  num_leaves: 45
+  reg_alpha: 0.17943130140820815
+  reg_lambda: 0.10154626671341846
   min_data_in_leaf: 6
   min_sum_hessian_in_leaf: 11
   n_estimators: 100
