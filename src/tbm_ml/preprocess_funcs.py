@@ -14,6 +14,59 @@ def get_dataset(path_file: Path) -> pd.DataFrame:
     return df
 
 
+def add_collapse_section_index(df: pd.DataFrame, label_column: str = "collapse", 
+                                 sort_column: str = "Chainage", ascending: bool = False) -> pd.DataFrame:
+    """
+    Add a column identifying continuous collapse sections.
+    
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        label_column (str): Name of the collapse label column. Defaults to "collapse".
+        sort_column (str): Column to use for ordering (e.g., "Chainage" or "Tunnellength [m]").
+        ascending (bool): Sort order. Use False for Chainage (decreasing along tunnel), 
+                         True for Tunnellength (increasing along tunnel).
+    
+    Returns:
+        pd.DataFrame: DataFrame with added 'collapse_section' column.
+                     Non-collapse rows have collapse_section = 0.
+                     Collapse rows are numbered 1, 2, 3, ... for each continuous section.
+    """
+    # Create a copy to avoid modifying original
+    df = df.copy()
+    
+    # Sort by the specified column to ensure proper ordering along the tunnel
+    if sort_column in df.columns:
+        df = df.sort_values(sort_column, ascending=ascending).reset_index(drop=True)
+    else:
+        pprint(f"Warning: Sort column '{sort_column}' not found. Using existing order.")
+    
+    # Identify continuous collapse sections
+    # A new section starts when current row is collapse and previous row is not collapse
+    df['is_collapse'] = df[label_column] == 1
+    df['collapse_section'] = (df['is_collapse'] & (~df['is_collapse'].shift(1, fill_value=False))).cumsum()
+    
+    # Set section to 0 for non-collapse rows
+    df.loc[~df['is_collapse'], 'collapse_section'] = 0
+    
+    # Convert to integer type
+    df['collapse_section'] = df['collapse_section'].astype(int)
+    
+    # Drop temporary column
+    df = df.drop(columns=['is_collapse'])
+    
+    # Report statistics
+    n_sections = df[df['collapse_section'] > 0]['collapse_section'].nunique()
+    if n_sections > 0:
+        section_sizes = df[df['collapse_section'] > 0].groupby('collapse_section').size()
+        pprint(f"Found {n_sections} continuous collapse sections")
+        pprint(f"Section sizes - Min: {section_sizes.min()}, Max: {section_sizes.max()}, "
+               f"Mean: {section_sizes.mean():.1f}, Median: {section_sizes.median():.1f}")
+    else:
+        pprint("No collapse sections found")
+    
+    return df
+
+
 @track_sample_num
 def choose_features(df: pd.DataFrame, features: list) -> pd.DataFrame:
     """Choose features for dataset."""
@@ -114,11 +167,44 @@ def preprocess_data(
     remove_outliers_multi: bool,
     univariate_threshold: int = 3,
     multivariate_threshold=0.95,
+    add_collapse_sections: bool = True,
+    sort_column: str = "Chainage",
+    sort_ascending: bool = False,
 ) -> pd.DataFrame:
-    """Preprocess dataset."""
+    """
+    Preprocess dataset.
+    
+    Args:
+        path_file: Path to the raw dataset file
+        features: List of feature column names
+        site_features: List of site information column names
+        labels: Name of the label column
+        outlier_feature: Feature to use for univariate outlier detection
+        remove_duplicates: Whether to remove duplicate rows
+        remove_outliers_hard: Whether to remove hardcoded outliers
+        remove_outliers_uni: Whether to remove univariate outliers
+        remove_outliers_multi: Whether to remove multivariate outliers
+        univariate_threshold: Threshold for univariate outlier detection
+        multivariate_threshold: Threshold for multivariate outlier detection
+        add_collapse_sections: Whether to add collapse section indices (default: True)
+        sort_column: Column to use for sorting when identifying collapse sections
+        sort_ascending: Sort order for collapse section identification
+    
+    Returns:
+        pd.DataFrame: Preprocessed dataset with optional collapse_section column
+    """
     df = get_dataset(path_file)
     pprint("Dataset loaded")
-    df = choose_features(df, features=site_features + features + [labels])
+    
+    # Add collapse section index before feature selection if enabled
+    if add_collapse_sections:
+        df = add_collapse_section_index(df, label_column=labels, 
+                                        sort_column=sort_column, ascending=sort_ascending)
+        # Include collapse_section in the selected features
+        df = choose_features(df, features=site_features + features + [labels, 'collapse_section'])
+    else:
+        df = choose_features(df, features=site_features + features + [labels])
+    
     df = drop_na(df)
     pprint("NA values dropped")
     if remove_duplicates:

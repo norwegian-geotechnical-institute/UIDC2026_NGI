@@ -25,7 +25,7 @@ def pairplot(
     """
     n_params = len(parameters)
 
-    fig, axs = plt.subplots(nrows=n_params, ncols=n_params, figsize=(18, 18))
+    fig, axs = plt.subplots(nrows=n_params, ncols=n_params, figsize=(9, 8))
 
     df_collaps = df[df[target] == 1]
     df_regular = df[df[target] != 1]
@@ -41,6 +41,7 @@ def pairplot(
                     edgecolor="black",
                     alpha=0.5,
                     density=True,
+                    linewidth=0.3,
                 )
                 ax.hist(
                     df_collaps[parameters[i]],
@@ -50,6 +51,7 @@ def pairplot(
                     edgecolor="black",
                     zorder=2,
                     density=True,
+                    linewidth=0.3,
                 )
             else:
                 ax.scatter(
@@ -59,6 +61,7 @@ def pairplot(
                     edgecolor="black",
                     alpha=0.3,
                     s=1,
+                    linewidths=0.3,
                 )
                 ax.scatter(
                     df_collaps[parameters[j]],
@@ -66,15 +69,27 @@ def pairplot(
                     color="red",
                     alpha=1,
                     s=2,
+                    linewidths=0,
                 )
             
             # Set y-axis label for leftmost column
             if j == 0:
-                ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=10)
+                ax.set_ylabel(parameters[i].replace(" [", "\n["), fontsize=9)
             
-            ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=10)
-            ax.tick_params(axis="both", labelsize=9)
+            # Only show x-axis label for bottom row
+            if i == n_params - 1:
+                ax.set_xlabel(parameters[j].replace(" [", "\n["), fontsize=9)
+            else:
+                ax.set_xlabel('')
+            
+            ax.tick_params(axis="both", labelsize=7, labelrotation=0)
+            # Rotate y-tick labels to prevent overlap
+            for label in ax.get_yticklabels():
+                label.set_rotation(0)
 
+    # Adjust spacing between subplots
+    plt.subplots_adjust(wspace=0.15, hspace=0.15)
+    
     return fig
 
 
@@ -275,7 +290,7 @@ def _plot_param(ax, dataframe, parameter, gaps, show_gap_markers=False):
     x_broken, y_broken = _break_at_gaps(x, y, gaps)
     
     ax.plot(x_broken, y_broken, color="black", linewidth=0.5)
-    ax.set_ylabel(parameter)
+    ax.set_ylabel(parameter.replace(" ", "\n"), fontsize=8)
     ax.set_xlim(left=x.min(), right=x.max())
     ax.grid(alpha=0.5)
     
@@ -306,14 +321,14 @@ def plot_tbm_parameters(df, gap_threshold=1.0, show_gap_markers=False):
     # Detect gaps in the data
     gaps = _detect_gaps(df["Tunnellength [m]"], threshold=gap_threshold)
     
-    fig, axs = plt.subplots(ncols=1, nrows=5, figsize=(18, 8), sharex=True)
+    fig, axs = plt.subplots(ncols=1, nrows=5, figsize=(10, 5), sharex=True)
 
     _plot_param(axs[0], df, "penetration\n[mm/rev]", gaps, show_gap_markers)
     _plot_param(axs[1], df, "advance rate\n[mm/min]", gaps, show_gap_markers)
     _plot_param(axs[2], df, "cutterhead rotations\n[rpm]", gaps, show_gap_markers)
     _plot_param(axs[3], df, "thrust\n[kN]", gaps, show_gap_markers)
     _plot_param(axs[4], df, "cutterhead torque\n[kNm]", gaps, show_gap_markers)
-    axs[4].set_xlabel("Tunnellength [m]")
+    axs[4].set_xlabel("Chainage [m]")
     
     # Add legend for collapse regions on the top plot
     from matplotlib.patches import Patch
@@ -328,12 +343,13 @@ def plot_tbm_confusion_matrix(
     y_pred: np.ndarray | list,
     class_mapping: dict[int, str],
     model_name: str = "",
-    figsize: tuple = (5, 5),
+    figsize: tuple = (4.5, 4.5),
     normalize: str = "true",
     show_percentages: bool = True,
     cmap: str = "Greys",
     dpi: int = 300,
     cell_colors: dict[str, str] | None = None,
+    show_labels: bool = False,
 ) -> plt.Figure:
     """
     Create a confusion matrix plot matching the style from A_main.py and preliminary_tests.py.
@@ -368,6 +384,8 @@ def plot_tbm_confusion_matrix(
         to specify custom colors for each cell. If provided, overrides cmap.
         Maps to: TR (True Regular), FC (False Collapse), FR (False Regular), TC (True Collapse)
         Example: {'tn_color': '#90EE90', 'fp_color': '#FFD700', 'fn_color': '#FF6B6B', 'tp_color': '#4ECDC4'}
+    show_labels : bool, optional
+        Whether to show TR/TC/FR/FC labels in cells. Default is False
 
     Returns:
     --------
@@ -380,9 +398,15 @@ def plot_tbm_confusion_matrix(
     >>> fig = plot_tbm_confusion_matrix(y_test, y_pred, class_mapping, "RandomForest")
     """
 
-    # Calculate confusion matrix for display values (normalized to 'all' for percentages)
-    cm_display_values = confusion_matrix(y_true, y_pred, normalize='all')
-    cm_display = np.round(cm_display_values * 100, 1)  # Round to 1 decimal place for percentages
+    # Calculate confusion matrix for raw counts
+    cm_counts = confusion_matrix(y_true, y_pred, normalize=None)
+    
+    # Calculate confusion matrix for display values
+    if show_percentages:
+        cm_display_values = confusion_matrix(y_true, y_pred, normalize='all')
+        cm_display = np.round(cm_display_values * 100, 1)  # Round to 1 decimal place for percentages
+    else:
+        cm_display = cm_counts  # Use raw counts
     
     # Calculate confusion matrix for color opacity (normalized by true labels)
     cm_for_colors = confusion_matrix(y_true, y_pred, normalize='true')
@@ -406,14 +430,13 @@ def plot_tbm_confusion_matrix(
         # Display each cell with its specific color and opacity
         for i in range(cm_display.shape[0]):
             for j in range(cm_display.shape[1]):
-                # Convert hex color to RGB and apply opacity
+                # Convert hex color to RGB and apply full opacity
                 import matplotlib.colors as mcolors
                 base_color = mcolors.to_rgb(color_matrix[i, j])
-                opacity = opacity_values[i, j]
                 
                 ax.add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, 
                                           facecolor=base_color, 
-                                          alpha=opacity,
+                                          alpha=0.5,
                                           edgecolor='white', linewidth=2))
         
         # Set axis limits
@@ -444,27 +467,29 @@ def plot_tbm_confusion_matrix(
     # Rotate x-axis labels
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-    # Add percentage annotations in cells
-    if show_percentages:
-        for i in range(cm_display.shape[0]):
-            for j in range(cm_display.shape[1]):
-                value = cm_display[i, j]
-                
-                # Choose text color based on cell opacity/value (using 'true' normalization for consistency)
-                # For custom colors, base on normalized value; for colormap, use original logic
-                if cell_colors is not None:
-                    # Use 'true' normalization for text color decision
-                    opacity = cm_for_colors[i, j]
-                    text_color = "white" if opacity > 0.5 else "black"
-                else:
-                    # Use 'true' normalization for colormap
-                    opacity = cm_for_colors[i, j]
-                    text_color = "white" if opacity > 0.5 else "black"
+    # Add text annotations in cells
+    for i in range(cm_display.shape[0]):
+        for j in range(cm_display.shape[1]):
+            value = cm_display[i, j]
+            
+            # Use black text for all cells
+            text_color = "black"
 
-                # Format text - always show percentages normalized to 'all'
+            # Format text based on show_percentages flag
+            if show_percentages:
                 text = f"({value:.1f}%)"
+            else:
+                text = f"{int(value)}"
+            
+            # Add labels if requested (TR, TC, FR, FC)
+            if show_labels:
+                # For binary classification: [[TN, FP], [FN, TP]]
+                labels = [["TR", "FC"], ["FR", "TC"]]
+                if i < len(labels) and j < len(labels[0]):
+                    label_text = labels[i][j]
+                    text = f"{label_text}\n{text}"
 
-                ax.text(j, i, text, ha="center", va="center", color=text_color)
+            ax.text(j, i, text, ha="center", va="center", color=text_color, fontsize=10)
 
     # Adjust layout to prevent clipping
     plt.tight_layout()

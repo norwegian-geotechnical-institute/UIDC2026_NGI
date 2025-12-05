@@ -175,6 +175,12 @@ def xgb_native_pipeline(
     random_seed: int = 42,
 ) -> pd.Series:
 
+    # Remove collapse_section from features if present (used for grouping in CV, not as a feature)
+    if 'collapse_section' in X_train.columns:
+        X_train = X_train.drop(columns=['collapse_section'])
+    if 'collapse_section' in X_test.columns:
+        X_test = X_test.drop(columns=['collapse_section'])
+
     # Convert labels to integers to ensure consistency
     y_train = y_train.astype(int)
     y_test = y_test.astype(int)
@@ -245,6 +251,12 @@ def train_predict(
     save_model: bool = False,
     random_seed: int = 42,
 ) -> Pipeline:
+    # Remove collapse_section from features if present (used for grouping in CV, not as a feature)
+    if 'collapse_section' in X_train.columns:
+        X_train = X_train.drop(columns=['collapse_section'])
+    if 'collapse_section' in X_test.columns:
+        X_test = X_test.drop(columns=['collapse_section'])
+    
     # Calculate undersample_level from ratio if not explicitly provided
     if undersample_level is None and undersample_ratio is not None:
         minority_count = int(y_train.value_counts().min())

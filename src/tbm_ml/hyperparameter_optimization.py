@@ -18,7 +18,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
 
 from tbm_ml.train_eval_funcs import xgb_native_pipeline, train_predict, calculate_prediction_costs
 
@@ -242,8 +242,23 @@ def get_hyperparameter_space(model_name: str, trial: optuna.Trial, random_seed: 
         raise ValueError(f"Hyperparameter space not defined for model: {model_name}")
 
 
-def create_objective_function(model_name: str, cv_folds: int = 5, cost_matrix: dict | None = None, random_seed: int = 42):
-    """Create an objective function for a specific model with cross-validation."""
+def create_objective_function(model_name: str, cv_folds: int = 5, cost_matrix: dict | None = None, random_seed: int = 42, use_collapse_sections: bool = True):
+    """Create an objective function for a specific model with cross-validation.
+    
+    Parameters:
+    -----------
+    model_name : str
+        Name of the model to optimize
+    cv_folds : int
+        Number of cross-validation folds
+    cost_matrix : dict | None
+        Cost matrix for prediction costs
+    random_seed : int
+        Random seed for reproducibility
+    use_collapse_sections : bool
+        If True and 'collapse_section' column exists in X, use StratifiedGroupKFold
+        to keep collapse sections together during CV (default: True)
+    """
 
     def objective(
         trial: optuna.Trial,
@@ -263,8 +278,29 @@ def create_objective_function(model_name: str, cv_folds: int = 5, cost_matrix: d
         console.print(f"Trial {trial.number}: {pformat(trial.params)}")
 
         try:
-            # Use stratified k-fold cross-validation
-            skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
+            # Check if collapse_section column exists and create groups
+            has_collapse_sections = use_collapse_sections and 'collapse_section' in X.columns
+            
+            if has_collapse_sections:
+                # Create groups: use collapse_section for collapse samples, unique ID for non-collapse
+                groups = X['collapse_section'].copy()
+                non_collapse_mask = groups == 0
+                groups.loc[non_collapse_mask] = -X.loc[non_collapse_mask].index
+                
+                # Remove collapse_section from features for training
+                X_for_training = X.drop(columns=['collapse_section'])
+                
+                # Use StratifiedGroupKFold to keep collapse sections together
+                sgkf = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
+                cv_splitter = sgkf.split(X_for_training, y, groups=groups)
+                console.print(f"[cyan]Using StratifiedGroupKFold (collapse sections kept together)[/cyan]")
+            else:
+                # Use standard StratifiedKFold
+                X_for_training = X
+                skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
+                cv_splitter = skf.split(X_for_training, y)
+                console.print(f"[cyan]Using StratifiedKFold (standard CV)[/cyan]")
+            
             cv_metrics = {
                 "balanced_accuracy": [],
                 "accuracy": [],
@@ -274,9 +310,9 @@ def create_objective_function(model_name: str, cv_folds: int = 5, cost_matrix: d
                 "average_cost": [],
             }
 
-            for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
-                X_train_fold = X.iloc[train_idx]
-                X_val_fold = X.iloc[val_idx]
+            for fold, (train_idx, val_idx) in enumerate(cv_splitter):
+                X_train_fold = X_for_training.iloc[train_idx]
+                X_val_fold = X_for_training.iloc[val_idx]
                 y_train_fold = y.iloc[train_idx]
                 y_val_fold = y.iloc[val_idx]
 
@@ -384,13 +420,55 @@ def run_optimization(
     experiment_name: str = None,
     log_to_mlflow: bool = False,
     random_seed: int = 42,
+    use_collapse_sections: bool = True,
 ) -> Any:
+    """
+    Run hyperparameter optimization with Optuna.
+    
+    Parameters:
+    -----------
+    model_name : str
+        Name of the model to optimize
+    X : pd.DataFrame
+        Feature matrix (may include 'collapse_section' column)
+    y : pd.Series
+        Target labels
+    oversample_level : int
+        Level for SMOTE oversampling
+    undersample_level : int | None
+        Absolute level for undersampling (overrides ratio if set)
+    undersample_ratio : float | None
+        Ratio of majority:minority for undersampling
+    cost_matrix : dict | None
+        Cost matrix for prediction costs
+    n_trials : int
+        Number of Optuna trials
+    cv_folds : int
+        Number of cross-validation folds
+    study_name : str | None
+        Name for the Optuna study
+    mlflow_path : Path | None
+        Path to MLflow tracking directory
+    experiment_name : str | None
+        MLflow experiment name
+    log_to_mlflow : bool
+        Whether to log results to MLflow
+    random_seed : int
+        Random seed for reproducibility
+    use_collapse_sections : bool
+        If True and 'collapse_section' exists in X, use StratifiedGroupKFold
+        to keep collapse sections together during CV (default: True)
+    
+    Returns:
+    --------
+    optuna.Study : Completed optimization study
+    """
 
     if study_name is None:
         study_name = f"{model_name}_hyperparameter_optimization"
 
     # Create objective function for this model
-    objective_func = create_objective_function(model_name, cv_folds, cost_matrix, random_seed)
+    objective_func = create_objective_function(model_name, cv_folds, cost_matrix, random_seed, use_collapse_sections)
 
     sampler = optuna.samplers.TPESampler(seed=random_seed)
     study = optuna.create_study(

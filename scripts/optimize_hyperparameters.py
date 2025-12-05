@@ -36,6 +36,11 @@ def main(cfg: DictConfig) -> None:
 
     X = df[pcfg.experiment.features]
     y = df[pcfg.experiment.label]
+    
+    # Add collapse_section to X if available (for group-based CV, will be removed before training)
+    if 'collapse_section' in df.columns:
+        X['collapse_section'] = df['collapse_section']
+        console.print("[cyan]Added collapse_section column for group-based cross-validation[/cyan]")
 
     console.print(
         f"[bold blue]Starting hyperparameter optimization for {model_name}...[/bold blue]"
@@ -69,6 +74,7 @@ def main(cfg: DictConfig) -> None:
         mlflow_path=Path(pcfg.mlflow.path),
         experiment_name=pcfg.mlflow.experiment_name,
         log_to_mlflow=True,
+        use_collapse_sections=True,  # Use group-based CV to keep collapse sections together
     )
 
     console.rule("Study statistics")

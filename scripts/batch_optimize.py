@@ -71,8 +71,14 @@ def optimize_single_model(
 
         X = df[pcfg.experiment.features]
         y = df[pcfg.experiment.label]
+        
+        # Add collapse_section to X if available (for group-based CV, will be removed before training)
+        if 'collapse_section' in df.columns:
+            X['collapse_section'] = df['collapse_section']
+            console.print("[cyan]Added collapse_section column for group-based cross-validation[/cyan]")
 
         console.print(f"Total samples: {len(X)}")
+        console.print(f"Features: {len(pcfg.experiment.features)}")
         console.print(f"Number of trials: {pcfg.optuna.n_trials}")
         console.print(
             f"Using {pcfg.optuna.cv_folds}-fold cross-validation for hyperparameter optimization"
@@ -102,6 +108,7 @@ def optimize_single_model(
             experiment_name=pcfg.mlflow.experiment_name,
             log_to_mlflow=True,
             random_seed=pcfg.experiment.seed,
+            use_collapse_sections=True,  # Use group-based CV to keep collapse sections together
         )
 
         end_time = time.time()
@@ -119,8 +126,13 @@ def optimize_single_model(
         # Evaluate on test set with best parameters
         console.print("[bold green]Evaluating on test set...[/bold green]")
         df_test = get_dataset(pcfg.dataset.path_model_ready_test)
+        
         X_test = df_test[pcfg.experiment.features]
         y_test = df_test[pcfg.experiment.label]
+        
+        # Add collapse_section to X_test if available (for consistency, will be removed before training)
+        if 'collapse_section' in df_test.columns:
+            X_test['collapse_section'] = df_test['collapse_section']
         
         # Train final model with best parameters
         y_pred = train_predict(

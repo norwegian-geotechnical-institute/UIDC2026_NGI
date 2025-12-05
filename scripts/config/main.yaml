@@ -1,5 +1,5 @@
 defaults: #points to sub-configs
-  - model: xgboost.yaml # knn.yaml
+  - model: random_forest.yaml # knn.yaml
   - _self_ # main overrides sub-cfg in case of duplicates
 
 # EXPERIMENT CONFIG

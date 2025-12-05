@@ -4,7 +4,7 @@ Repository for code and results of NGI's contribution to the 1st International U
 
 ## Overview
 
-This project develops machine learning models for predicting Tunnel Boring Machine (TBM) collapse events using operational data from the Yinsong Water Diversion Project. The codebase includes comprehensive data preprocessing, feature engineering, hyperparameter optimization, and model evaluation pipelines with MLflow experiment tracking.
+This project develops machine learning models for predicting Tunnel Boring Machine (TBM) collapse events using operational data from the Yinsong Water Diversion Project. The codebase includes data preprocessing, feature engineering, hyperparameter optimization, and model evaluation pipelines with MLflow experiment tracking.
 
 ## Project Structure
 
@@ -14,14 +14,18 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 │   ├── optimize_hyperparameters.py  # Single model hyperparameter optimization
 │   ├── train.py                     # Model training with best hyperparameters
 │   ├── preprocess.py                # Data preprocessing pipeline
-│   ├── select_features.py           # Feature selection utilities
+│   ├── undersampling_cost_analysis.py  # Analyze undersampling fraction vs prediction cost
+│   ├── generate_cv_results_table.py # Generate results table from YAML files
+│   ├── analyze_collapse_sections.py # Analyze collapse section distributions
+│   ├── permutation_feature_importance.py  # Feature importance analysis
 │   ├── EDA.py                       # Exploratory data analysis
 │   └── config/                      # Hydra configuration files
 │       └── main.yaml                # Main configuration (CV folds, sampling, MLflow)
 ├── src/tbm_ml/                      # Core ML library
-│   ├── hyperparameter_optimization.py  # Optuna-based hyperparameter search
+│   ├── hyperparameter_optimization.py  # Optuna-based hyperparameter search with StratifiedGroupKFold
 │   ├── train_eval_funcs.py          # Training pipelines and evaluation
 │   ├── preprocess_funcs.py          # Data preprocessing functions
+│   ├── collapse_section_split.py    # Collapse section-aware train/test splitting
 │   ├── plotting.py                  # Visualization utilities
 │   └── schema_config.py             # Pydantic configuration schemas
 ├── data/                            # Dataset storage
@@ -31,8 +35,10 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 ├── experiments/                     # Experiment outputs
 │   ├── mlruns/                      # MLflow tracking data
 │   └── hyperparameters/             # Best hyperparameter YAML files
+├── analyses/                        # Analysis outputs
+│   ├── undersampling_analysis/      # Cost vs undersampling fraction analysis
+│   └── profile_report/              # Data profiling reports
 └── docs/                            # Documentation
-
 ```
 
 ## Key Features
@@ -40,12 +46,13 @@ This project develops machine learning models for predicting Tunnel Boring Machi
 ### Data Preprocessing
 
 - **Outlier Detection**: Isolation Forest-based outlier removal
+- **Collapse Section Tracking**: Identifies and indexes continuous collapse sections for group-aware CV
 - **Class Imbalance Handling**:
   - RandomUnderSampler for majority class reduction (ratio-based or absolute)
-  - SMOTE for minority class oversampling
+  - SMOTE for minority class oversampling (not used in final models)
   - Configurable undersampling ratio (e.g., 1.0 = 1:1 majority:minority ratio)
 - **Feature Scaling**: StandardScaler normalization
-- **Train/Test Split**: Stratified split preserving class distributions
+- **Train/Test Split**: Section-aware split (sections 1-15 train, 16-18 test) preserving collapse section integrity
 
 ### Model Support
 
@@ -59,8 +66,9 @@ The framework supports 11 machine learning models:
 ### Hyperparameter Optimization
 
 - **Framework**: Optuna with TPE (Tree-structured Parzen Estimator) sampler
-- **Cross-Validation**: Stratified K-Fold (configurable, default 5-fold)
-- **Metrics**: Balanced accuracy (primary), precision, recall, F1-score
+- **Cross-Validation**: StratifiedGroupKFold (5-fold) to keep collapse sections together during CV
+- **Metrics**: Cost-based optimization (minimizing expected prediction cost), balanced accuracy, precision, recall, F1-score
+- **Cost Matrix**: Configurable costs for TN, FP, FN, TP with time per regular advance multiplier
 - **Trials**: 100 trials per model (configurable)
 - **Logging**: MLflow integration for experiment tracking and visualization
 
@@ -95,6 +103,14 @@ uv sync
 
 ## Usage
 
+### 0. Run the preliminary tests script
+
+Note: This is just to generate the merged csv file used in subsequent steps.
+
+```bash
+python scripts/preliminary_tests.py
+```
+
 ### 1. Data Preprocessing
 
 ```bash
@@ -127,7 +143,20 @@ python scripts/train.py
 
 Trains models using the best hyperparameters found during optimization.
 
-### 4. MLflow UI
+### 4. Undersampling Cost Analysis
+
+```bash
+python scripts/undersampling_cost_analysis.py
+```
+
+Analyzes how different undersampling fractions affect prediction cost. Generates:
+
+- Cost vs undersampling fraction plots (CV and test set)
+- Accuracy metrics plots (CV and test set)
+- Confusion matrices for different undersampling ratios
+- Results CSV with optimal undersampling fraction
+
+### 5. MLflow UI
 
 ```bash
 python -m mlflow ui --backend-store-uri ./experiments/mlruns --port 5000
@@ -142,41 +171,51 @@ Main configuration file: `scripts/config/main.yaml`
 Key parameters:
 
 ```yaml
-data:
-  train_path: "data/model_ready/dataset_train.csv"
-  test_path: "data/model_ready/dataset_test.csv"
-
-preprocessing:
+experiment:
   undersample_level: null  # Absolute number (overrides ratio if set), or null to use ratio
   undersample_ratio: 1.0   # Majority:minority ratio (1.0 = 1:1, 2.0 = 2:1, etc.)
   oversample_level: 0      # Minority class SMOTE (0=disabled)
-  outlier_removal: true
+  
+  # Cost matrix for prediction cost calculation (in hours per regular advance)
+  cost_matrix:
+    tn_cost: 1.0           # True Regular (correct prediction of regular)
+    fp_cost: 10.0          # False Collapse (false alarm)
+    fn_cost: 240.0         # False Regular (missed collapse - most costly)
+    tp_cost: 10.0          # True Collapse (correct prediction of collapse)
+    time_per_regular_advance: 1.0  # Time unit multiplier
 
-optimization:
+optuna:
   n_trials: 100            # Optuna trials per model
-  cv_folds: 5              # Cross-validation folds
-  metric: "balanced_accuracy"
+  cv_folds: 5              # Cross-validation folds (uses StratifiedGroupKFold)
+  path_results: experiments/hyperparameters
 
 mlflow:
-  path: "./experiments/mlruns"
+  path: ./experiments/mlruns
   experiment_name: null    # Set programmatically by scripts
 ```
 
 ## Models Configuration
 
-Edit `scripts/batch_optimize.py` to select models:
+The models are configured in `scripts/batch_optimize.py`:
 
 ```python
-MODELS = [
+# Models that undergo hyperparameter optimization
+MODELS_TO_OPTIMIZE = [
     "xgboost",
     "random_forest",
     "extra_trees",
     "hist_gradient_boosting",
     "catboost",
     "lightgbm",
-    "logistic_regression",
     "svm",
     "knn",
+    "gaussian_process",
+    "logistic_regression",
+]
+
+# Baseline models (evaluated without optimization)
+BASELINE_MODELS = [
+    "dummy",  # Always predicts majority class
 ]
 ```
 
@@ -189,6 +228,17 @@ Best hyperparameters saved to `experiments/hyperparameters/`:
 ```
 best_hyperparameters_{model_name}_{timestamp}.yaml
 ```
+
+Each file contains:
+
+- Optimized hyperparameters
+- CV performance metrics (cost-based)
+- Test set metrics (accuracy, balanced accuracy, recall, precision, F1, cost)
+- Optimization metadata (trial number, duration, timestamp)
+
+### Analysis Outputs
+
+- `analyses/undersampling_analysis/{timestamp}/` - Undersampling analysis plots and data
 
 ### MLflow Artifacts
 
